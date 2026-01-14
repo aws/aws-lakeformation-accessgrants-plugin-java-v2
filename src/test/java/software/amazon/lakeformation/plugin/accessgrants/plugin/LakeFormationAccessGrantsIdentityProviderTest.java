@@ -4,8 +4,11 @@ import software.amazon.lakeformation.plugin.accessgrants.cache.AccessDeniedCache
 import software.amazon.lakeformation.plugin.accessgrants.cache.AccessGrantsCache;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
@@ -34,6 +37,8 @@ import static software.amazon.awssdk.s3accessgrants.plugin.internal.S3AccessGran
  * Test class for LakeFormationAccessGrantsIdentityProvider.
  * Note: Some Lake Formation API classes are temporarily commented out due to missing SDK classes.
  */
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class LakeFormationAccessGrantsIdentityProviderTest {
 
     @Mock
@@ -63,7 +68,6 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
     @BeforeEach
     public void setUp() {
-        MockitoAnnotations.openMocks(this);
         testCredentials = AwsBasicCredentials.create("accessKey", "secretKey");
 
         // Use real cache instances

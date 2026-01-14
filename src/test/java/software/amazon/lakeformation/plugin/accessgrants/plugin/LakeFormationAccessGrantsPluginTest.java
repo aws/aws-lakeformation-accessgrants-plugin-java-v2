@@ -2,8 +2,11 @@ package software.amazon.lakeformation.plugin.accessgrants.plugin;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import software.amazon.awssdk.core.SdkServiceClientConfiguration;
 import software.amazon.awssdk.identity.spi.AwsCredentialsIdentity;
 import software.amazon.awssdk.identity.spi.IdentityProvider;
@@ -19,6 +22,8 @@ import static org.mockito.Mockito.*;
 /**
  * Test class for LakeFormationAccessGrantsPlugin.
  */
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class LakeFormationAccessGrantsPluginTest {
 
     @Mock
@@ -37,8 +42,6 @@ public class LakeFormationAccessGrantsPluginTest {
 
     @BeforeEach
     public void setUp() {
-        MockitoAnnotations.openMocks(this);
-
         // Setup mock configuration using doReturn to avoid type inference issues
         doReturn(mockOriginalIdentityProvider).when(mockServiceClientConfiguration).credentialsProvider();
         doReturn(mockOriginalAuthSchemeProvider).when(mockServiceClientConfiguration).authSchemeProvider();

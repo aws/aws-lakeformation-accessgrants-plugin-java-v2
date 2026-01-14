@@ -2,8 +2,9 @@ package software.amazon.lakeformation.plugin.accessgrants.cache;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
@@ -25,6 +26,7 @@ import static org.mockito.Mockito.*;
 /**
  * Test class for AccessGrantsCache.
  */
+@ExtendWith(MockitoExtension.class)
 public class AccessGrantsCacheTest {
 
     private AccessGrantsCache cache;
@@ -39,7 +41,6 @@ public class AccessGrantsCacheTest {
 
     @BeforeEach
     public void setUp() {
-        MockitoAnnotations.openMocks(this);
         cache = new AccessGrantsCache();
         testCredentials = AwsBasicCredentials.create("accessKey", "secretKey");
         testKey = new CacheKey(testCredentials, Permission.READ, "s3://test-bucket/test-key");
