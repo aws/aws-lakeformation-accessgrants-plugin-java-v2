@@ -13,7 +13,6 @@ import software.amazon.awssdk.services.lakeformation.LakeFormationClient;
 import software.amazon.awssdk.services.s3.S3ServiceClientConfiguration;
 import software.amazon.awssdk.utils.Validate;
 import software.amazon.awssdk.utils.builder.ToCopyableBuilder;
-import software.amazon.awssdk.utils.builder.CopyableBuilder;
 
 import java.util.logging.Logger;
 
@@ -91,7 +90,6 @@ public class LakeFormationAccessGrantsPlugin implements SdkPlugin,
                 config,
                 "Expecting the plugin to be only configured on s3 clients");
 
-        // TODO: Create LakeFormationAccessGrantsIdentityProvider class
         serviceClientConfiguration.credentialsProvider(new LakeFormationAccessGrantsIdentityProvider(
             originalIdentityProvider,
             lfClient,

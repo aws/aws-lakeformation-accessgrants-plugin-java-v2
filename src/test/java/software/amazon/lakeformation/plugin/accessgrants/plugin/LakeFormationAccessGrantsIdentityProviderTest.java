@@ -10,19 +10,19 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
-import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.identity.spi.AwsCredentialsIdentity;
 import software.amazon.awssdk.identity.spi.IdentityProvider;
 import software.amazon.awssdk.identity.spi.ResolveIdentityRequest;
 import software.amazon.awssdk.services.lakeformation.LakeFormationClient;
-// import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsRequest;
-// import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsResponse;
+import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsRequest;
+import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsResponse;
 import software.amazon.awssdk.services.lakeformation.model.LakeFormationException;
-// import software.amazon.awssdk.services.lakeformation.model.TemporaryCredentials;
+import software.amazon.awssdk.services.lakeformation.model.TemporaryCredentials;
 import software.amazon.awssdk.services.s3control.model.Permission;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -35,7 +35,8 @@ import static software.amazon.awssdk.s3accessgrants.plugin.internal.S3AccessGran
 
 /**
  * Test class for LakeFormationAccessGrantsIdentityProvider.
- * Note: Some Lake Formation API classes are temporarily commented out due to missing SDK classes.
+ * Tests successful credential resolution, access denied cache hit,
+ * fallback to S3 Access Grants, and failure without fallback.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -59,12 +60,10 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
     private LakeFormationAccessGrantsIdentityProvider identityProvider;
     private AwsCredentialsIdentity testCredentials;
 
-    // Mock successful LakeFormation response - temporarily using basic credentials
-    // TODO: Replace with TemporaryCredentials when SDK classes are available
-    private final AwsCredentialsIdentity mockCredentials = AwsBasicCredentials.create(
-            "lfAccessKey",
-            "lfSecretKey"
-    );
+    private static final String TEST_ACCESS_KEY = "lfAccessKey";
+    private static final String TEST_SECRET_KEY = "lfSecretKey";
+    private static final String TEST_SESSION_TOKEN = "lfSessionToken";
+    private static final String TEST_S3_PREFIX = "s3://test-bucket/test-key";
 
     @BeforeEach
     public void setUp() {
@@ -84,9 +83,10 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
         );
 
         // Setup common mock behaviors
-        doReturn(CompletableFuture.completedFuture(testCredentials)).when(mockOriginalProvider).resolveIdentity(mockResolveIdentityRequest);
+        doReturn(CompletableFuture.completedFuture(testCredentials))
+            .when(mockOriginalProvider).resolveIdentity(mockResolveIdentityRequest);
         when(mockResolveIdentityRequest.property(PREFIX_PROPERTY))
-            .thenReturn("s3://test-bucket/test-key");
+            .thenReturn(TEST_S3_PREFIX);
         when(mockResolveIdentityRequest.property(PERMISSION_PROPERTY))
             .thenReturn(Permission.READ.toString());
     }
@@ -98,53 +98,58 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
     @Test
     public void testResolveIdentityWithSuccessfulLakeFormationCredentials() throws Exception {
-        // TODO: Uncomment when Lake Formation API classes are available
-        /*
         // Setup Lake Formation to return credentials
+        TemporaryCredentials tempCreds = TemporaryCredentials.builder()
+            .accessKeyId(TEST_ACCESS_KEY)
+            .secretAccessKey(TEST_SECRET_KEY)
+            .sessionToken(TEST_SESSION_TOKEN)
+            .build();
+
+        GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
+            .credentials(tempCreds)
+            .accessibleDataLocations(List.of(TEST_S3_PREFIX))
+            .build();
+
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
-            .thenReturn(GetTemporaryDataLocationCredentialsResponse.builder()
-                .credentials(mockCredentials)
-                .accessibleDataLocations(List.of("s3://test-bucket/test-key"))
-                .build());
+            .thenReturn(response);
 
         CompletableFuture<? extends AwsCredentialsIdentity> result =
             identityProvider.resolveIdentity(mockResolveIdentityRequest);
 
         AwsCredentialsIdentity resolvedCredentials = result.get();
         assertNotNull(resolvedCredentials);
-        assertEquals("lfAccessKey", resolvedCredentials.accessKeyId());
-        assertEquals("lfSecretKey", resolvedCredentials.secretAccessKey());
-        */
-
-        // Temporary test - fallback to S3AccessGrants since Lake Formation API is not available
-        AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
-        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
-
-        CompletableFuture<? extends AwsCredentialsIdentity> result =
-            identityProvider.resolveIdentity(mockResolveIdentityRequest);
-
-        AwsCredentialsIdentity resolvedCredentials = result.get();
-        assertNotNull(resolvedCredentials);
-        assertEquals("fallbackKey", resolvedCredentials.accessKeyId());
+        assertEquals(TEST_ACCESS_KEY, resolvedCredentials.accessKeyId());
+        assertEquals(TEST_SECRET_KEY, resolvedCredentials.secretAccessKey());
+        assertTrue(resolvedCredentials instanceof AwsSessionCredentials);
+        assertEquals(TEST_SESSION_TOKEN, ((AwsSessionCredentials) resolvedCredentials).sessionToken());
     }
 
     @Test
     public void testResolveIdentityWithCachedAccessDenied() throws ExecutionException, InterruptedException {
-        // First call Lake Formation with access denied to populate cache
-        // TODO: Update when Lake Formation API classes are available
-        // when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
-        //     .thenThrow(new RuntimeException("Access Denied"));
+        // Setup Lake Formation to throw access denied
+        AwsErrorDetails errorDetails = AwsErrorDetails.builder()
+            .errorCode("AccessDenied")
+            .errorMessage("Access Denied")
+            .build();
+        LakeFormationException accessDeniedException = (LakeFormationException) LakeFormationException.builder()
+            .awsErrorDetails(errorDetails)
+            .message("Access Denied")
+            .build();
+
+        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenThrow(accessDeniedException);
 
         // Mock S3AccessGrants fallback success
         AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
-        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
+        doReturn(CompletableFuture.completedFuture(fallbackCredentials))
+            .when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
 
-        // First call - populates access denied cache
+        // First call - should hit Lake Formation, get denied, cache exception, fallback to S3AccessGrants
         CompletableFuture<? extends AwsCredentialsIdentity> result1 =
             identityProvider.resolveIdentity(mockResolveIdentityRequest);
         AwsCredentialsIdentity resolvedCredentials1 = result1.get();
 
-        // Second call - should hit cache and skip Lake Formation
+        // Second call - should hit access denied cache and fallback
         CompletableFuture<? extends AwsCredentialsIdentity> result2 =
             identityProvider.resolveIdentity(mockResolveIdentityRequest);
         AwsCredentialsIdentity resolvedCredentials2 = result2.get();
@@ -153,18 +158,23 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
         assertNotNull(resolvedCredentials2);
         assertEquals("fallbackKey", resolvedCredentials1.accessKeyId());
         assertEquals("fallbackKey", resolvedCredentials2.accessKeyId());
+
+        // Verify Lake Formation was only called once (second call hit cache)
+        verify(mockLfClient, times(1))
+            .getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class));
     }
 
     @Test
     public void testResolveIdentityFallsBackToS3AccessGrants() throws Exception {
-        // Mock Lake Formation failure - temporarily using generic exception
-        // TODO: Update when Lake Formation API classes are available
-        // when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
-        //     .thenThrow(new RuntimeException("Lake Formation error"));
+        // Mock Lake Formation failure with non-access-denied error
+        RuntimeException lfException = new RuntimeException("Lake Formation service error");
+        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenThrow(lfException);
 
         // Mock S3AccessGrants fallback success
         AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
-        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
+        doReturn(CompletableFuture.completedFuture(fallbackCredentials))
+            .when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
 
         CompletableFuture<? extends AwsCredentialsIdentity> result =
             identityProvider.resolveIdentity(mockResolveIdentityRequest);
@@ -178,88 +188,109 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
     }
 
     @Test
-    public void testResolveIdentityFailsWhenNoFallback() {
-        // Create provider without S3AccessGrants fallback using real caches
-        LakeFormationAccessGrantsIdentityProvider providerWithoutFallback = new LakeFormationAccessGrantsIdentityProvider(
-            mockOriginalProvider,
-            mockLfClient,
-            accessDeniedCache,
-            accessGrantsCache,
-            true,
-            null // no fallback provider
-        );
+    public void testResolveIdentityFailsWhenFallbackDisabled() {
+        // Create provider with fallback disabled
+        LakeFormationAccessGrantsIdentityProvider providerWithoutFallback =
+            new LakeFormationAccessGrantsIdentityProvider(
+                mockOriginalProvider,
+                mockLfClient,
+                accessDeniedCache,
+                accessGrantsCache,
+                false, // fallback disabled
+                mockS3AccessGrantsIdentityProvider
+            );
 
-        // Mock Lake Formation failure - temporarily using generic exception
-        // TODO: Update when Lake Formation API classes are available
-        // when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
-        //     .thenThrow(new RuntimeException("Lake Formation error"));
+        // Mock Lake Formation failure
+        RuntimeException lfException = new RuntimeException("Lake Formation service error");
+        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenThrow(lfException);
 
         CompletableFuture<? extends AwsCredentialsIdentity> result =
             providerWithoutFallback.resolveIdentity(mockResolveIdentityRequest);
 
-        // Since Lake Formation API is not available, this will fallback to S3AccessGrants (null) and fail
+        // Should fail with SdkClientException
+        assertTrue(result.isCompletedExceptionally());
+        ExecutionException ex = assertThrows(ExecutionException.class, result::get);
+        assertTrue(ex.getCause() instanceof SdkClientException);
+        assertTrue(ex.getCause().getMessage().contains("Failed to resolve Lake Formation credentials"));
+
+        // Verify S3AccessGrants was NOT called
+        verify(mockS3AccessGrantsIdentityProvider, never()).resolveIdentity(any(ResolveIdentityRequest.class));
+    }
+
+    @Test
+    public void testResolveIdentityFailsWhenNoFallbackProvider() {
+        // Create provider without S3AccessGrants fallback provider
+        LakeFormationAccessGrantsIdentityProvider providerWithoutFallback =
+            new LakeFormationAccessGrantsIdentityProvider(
+                mockOriginalProvider,
+                mockLfClient,
+                accessDeniedCache,
+                accessGrantsCache,
+                true, // fallback enabled but no provider
+                null  // no fallback provider
+            );
+
+        // Mock Lake Formation failure
+        RuntimeException lfException = new RuntimeException("Lake Formation service error");
+        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenThrow(lfException);
+
+        CompletableFuture<? extends AwsCredentialsIdentity> result =
+            providerWithoutFallback.resolveIdentity(mockResolveIdentityRequest);
+
+        // Should fail with SdkClientException
         assertTrue(result.isCompletedExceptionally());
     }
 
     @Test
-    public void testResolveIdentityWithBasicCredentials() throws Exception {
-        // Setup Lake Formation to return basic credentials
-        // TODO: Update when Lake Formation API classes are available
-        /*
-        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
-            .thenReturn(GetTemporaryDataLocationCredentialsResponse.builder()
-                .credentials(mockCredentials)
-                .accessibleDataLocations(List.of("s3://test-bucket/test-key"))
-                .build());
-        */
+    public void testResolveIdentityReturnsAwsSessionCredentials() throws Exception {
+        // Setup Lake Formation to return session credentials
+        TemporaryCredentials tempCreds = TemporaryCredentials.builder()
+            .accessKeyId(TEST_ACCESS_KEY)
+            .secretAccessKey(TEST_SECRET_KEY)
+            .sessionToken(TEST_SESSION_TOKEN)
+            .build();
 
-        // Temporary test - fallback to S3AccessGrants
-        AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
-        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
+        GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
+            .credentials(tempCreds)
+            .accessibleDataLocations(List.of(TEST_S3_PREFIX))
+            .build();
+
+        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenReturn(response);
 
         CompletableFuture<? extends AwsCredentialsIdentity> result =
             identityProvider.resolveIdentity(mockResolveIdentityRequest);
 
         AwsCredentialsIdentity resolvedCredentials = result.get();
-        assertNotNull(resolvedCredentials);
-        assertEquals("fallbackKey", resolvedCredentials.accessKeyId());
-    }
 
-    @Test
-    public void testCacheKeyConstruction() {
-        // Setup Lake Formation to return credentials - temporarily using fallback
-        // TODO: Update when Lake Formation API classes are available
-        /*
-        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
-            .thenReturn(GetTemporaryDataLocationCredentialsResponse.builder()
-                .credentials(mockCredentials)
-                .accessibleDataLocations(List.of("s3://test-bucket/test-key"))
-                .build());
-        */
+        // Verify it's an AwsSessionCredentials instance (Requirement 3.3)
+        assertTrue(resolvedCredentials instanceof AwsSessionCredentials,
+            "Resolved credentials should be AwsSessionCredentials");
 
-        AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
-        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
-
-        // This test verifies that the method completes without error (cache key construction is internal)
-        assertDoesNotThrow(() -> {
-            identityProvider.resolveIdentity(mockResolveIdentityRequest).join();
-        });
+        AwsSessionCredentials sessionCreds = (AwsSessionCredentials) resolvedCredentials;
+        assertEquals(TEST_ACCESS_KEY, sessionCreds.accessKeyId());
+        assertEquals(TEST_SECRET_KEY, sessionCreds.secretAccessKey());
+        assertEquals(TEST_SESSION_TOKEN, sessionCreds.sessionToken());
     }
 
     @Test
     public void testSuccessfulCredentialsCacheHit() throws ExecutionException, InterruptedException {
-        // Setup Lake Formation to return credentials - temporarily using fallback
-        // TODO: Update when Lake Formation API classes are available
-        /*
-        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
-            .thenReturn(GetTemporaryDataLocationCredentialsResponse.builder()
-                .credentials(mockCredentials)
-                .accessibleDataLocations(List.of("s3://test-bucket/*"))
-                .build());
-        */
+        // Setup Lake Formation to return credentials
+        TemporaryCredentials tempCreds = TemporaryCredentials.builder()
+            .accessKeyId(TEST_ACCESS_KEY)
+            .secretAccessKey(TEST_SECRET_KEY)
+            .sessionToken(TEST_SESSION_TOKEN)
+            .build();
 
-        AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
-        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
+        GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
+            .credentials(tempCreds)
+            .accessibleDataLocations(List.of(TEST_S3_PREFIX))
+            .build();
+
+        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenReturn(response);
 
         // First call - should hit Lake Formation and cache result
         CompletableFuture<? extends AwsCredentialsIdentity> result1 =
@@ -277,30 +308,34 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
         AwsCredentialsIdentity credentials3 = result3.get();
 
         // Verify all calls return same cached credentials
-        assertEquals("fallbackKey", credentials1.accessKeyId());
-        assertEquals("fallbackKey", credentials2.accessKeyId());
-        assertEquals("fallbackKey", credentials3.accessKeyId());
+        assertEquals(TEST_ACCESS_KEY, credentials1.accessKeyId());
+        assertEquals(TEST_ACCESS_KEY, credentials2.accessKeyId());
+        assertEquals(TEST_ACCESS_KEY, credentials3.accessKeyId());
+
+        // Verify Lake Formation was only called once
+        verify(mockLfClient, times(1))
+            .getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class));
     }
 
     @Test
     public void testAccessDeniedCacheHitMultipleCalls() throws ExecutionException, InterruptedException {
-        // Setup Lake Formation to throw access denied - temporarily using generic exception
-        // TODO: Update when Lake Formation API classes are available
-        /*
+        // Setup Lake Formation to throw access denied
         AwsErrorDetails errorDetails = AwsErrorDetails.builder()
             .errorCode("AccessDenied")
+            .errorMessage("Access Denied")
             .build();
-        AwsServiceException accessDeniedException = LakeFormationException.builder()
+        LakeFormationException accessDeniedException = (LakeFormationException) LakeFormationException.builder()
             .awsErrorDetails(errorDetails)
+            .message("Access Denied")
             .build();
+
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
             .thenThrow(accessDeniedException);
-        */
 
         // Setup S3 Access Grants fallback
         AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
-        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider)
-                .resolveIdentity(mockResolveIdentityRequest);
+        doReturn(CompletableFuture.completedFuture(fallbackCredentials))
+            .when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
 
         // First call - should hit Lake Formation, get denied, cache exception, fallback to S3AccessGrants
         CompletableFuture<? extends AwsCredentialsIdentity> result1 =
@@ -321,28 +356,34 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
         assertEquals("fallbackKey", credentials1.accessKeyId());
         assertEquals("fallbackKey", credentials2.accessKeyId());
         assertEquals("fallbackKey", credentials3.accessKeyId());
+
+        // Verify Lake Formation was only called once (subsequent calls hit cache)
+        verify(mockLfClient, times(1))
+            .getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class));
     }
 
     @Test
     public void testCacheHitWithWritePermission() throws ExecutionException, InterruptedException {
         // Setup request with WRITE permission
-        when(mockResolveIdentityRequest.property(PREFIX_PROPERTY)).thenReturn("s3://test-bucket/test-key");
-        when(mockResolveIdentityRequest.property(PERMISSION_PROPERTY)).thenReturn(Permission.WRITE);
-        doReturn(CompletableFuture.completedFuture(testCredentials)).when(mockOriginalProvider)
-                .resolveIdentity(mockResolveIdentityRequest);
+        when(mockResolveIdentityRequest.property(PREFIX_PROPERTY)).thenReturn(TEST_S3_PREFIX);
+        when(mockResolveIdentityRequest.property(PERMISSION_PROPERTY)).thenReturn(Permission.WRITE.toString());
+        doReturn(CompletableFuture.completedFuture(testCredentials))
+            .when(mockOriginalProvider).resolveIdentity(mockResolveIdentityRequest);
 
-        // Setup Lake Formation to return credentials - temporarily using fallback
-        // TODO: Update when Lake Formation API classes are available
-        /*
+        // Setup Lake Formation to return credentials
+        TemporaryCredentials tempCreds = TemporaryCredentials.builder()
+            .accessKeyId(TEST_ACCESS_KEY)
+            .secretAccessKey(TEST_SECRET_KEY)
+            .sessionToken(TEST_SESSION_TOKEN)
+            .build();
+
+        GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
+            .credentials(tempCreds)
+            .accessibleDataLocations(List.of(TEST_S3_PREFIX))
+            .build();
+
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
-            .thenReturn(GetTemporaryDataLocationCredentialsResponse.builder()
-                .credentials(mockCredentials)
-                .accessibleDataLocations(List.of("s3://test-bucket/test-key"))
-                .build());
-        */
-
-        AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
-        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
+            .thenReturn(response);
 
         // Multiple calls with WRITE permission
         CompletableFuture<? extends AwsCredentialsIdentity> result1 =
@@ -352,36 +393,39 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
         // Verify both calls return same credentials
         assertEquals(result1.get().accessKeyId(), result2.get().accessKeyId());
+        assertEquals(TEST_ACCESS_KEY, result1.get().accessKeyId());
     }
 
     @Test
     public void testSeparateCacheForReadAndWritePermissions() throws ExecutionException, InterruptedException {
         // Setup READ request
         ResolveIdentityRequest readRequest = mock(ResolveIdentityRequest.class);
-        when(readRequest.property(PREFIX_PROPERTY)).thenReturn("s3://test-bucket/test-key");
-        when(readRequest.property(PERMISSION_PROPERTY)).thenReturn(Permission.READ);
-        doReturn(CompletableFuture.completedFuture(testCredentials)).when(mockOriginalProvider)
-                .resolveIdentity(readRequest);
+        when(readRequest.property(PREFIX_PROPERTY)).thenReturn(TEST_S3_PREFIX);
+        when(readRequest.property(PERMISSION_PROPERTY)).thenReturn(Permission.READ.toString());
+        doReturn(CompletableFuture.completedFuture(testCredentials))
+            .when(mockOriginalProvider).resolveIdentity(readRequest);
 
         // Setup WRITE request
         ResolveIdentityRequest writeRequest = mock(ResolveIdentityRequest.class);
-        when(writeRequest.property(PREFIX_PROPERTY)).thenReturn("s3://test-bucket/test-key");
-        when(writeRequest.property(PERMISSION_PROPERTY)).thenReturn(Permission.WRITE);
-        doReturn(CompletableFuture.completedFuture(testCredentials)).when(mockOriginalProvider)
-                .resolveIdentity(writeRequest);
+        when(writeRequest.property(PREFIX_PROPERTY)).thenReturn(TEST_S3_PREFIX);
+        when(writeRequest.property(PERMISSION_PROPERTY)).thenReturn(Permission.WRITE.toString());
+        doReturn(CompletableFuture.completedFuture(testCredentials))
+            .when(mockOriginalProvider).resolveIdentity(writeRequest);
 
-        // Setup Lake Formation to return credentials - temporarily using fallback
-        // TODO: Update when Lake Formation API classes are available
-        /*
+        // Setup Lake Formation to return credentials
+        TemporaryCredentials tempCreds = TemporaryCredentials.builder()
+            .accessKeyId(TEST_ACCESS_KEY)
+            .secretAccessKey(TEST_SECRET_KEY)
+            .sessionToken(TEST_SESSION_TOKEN)
+            .build();
+
+        GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
+            .credentials(tempCreds)
+            .accessibleDataLocations(List.of(TEST_S3_PREFIX))
+            .build();
+
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
-            .thenReturn(GetTemporaryDataLocationCredentialsResponse.builder()
-                .credentials(mockCredentials)
-                .accessibleDataLocations(List.of("s3://test-bucket/test-key"))
-                .build());
-        */
-
-        AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
-        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider).resolveIdentity(any(ResolveIdentityRequest.class));
+            .thenReturn(response);
 
         // Call with READ permission twice
         identityProvider.resolveIdentity(readRequest).get();
@@ -391,8 +435,10 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
         identityProvider.resolveIdentity(writeRequest).get();
         identityProvider.resolveIdentity(writeRequest).get();
 
-        // Since we're using fallback, verify S3AccessGrants was called
-        verify(mockS3AccessGrantsIdentityProvider, atLeast(2)).resolveIdentity(any(ResolveIdentityRequest.class));
+        // Verify Lake Formation was called twice (once for READ, once for WRITE)
+        // because they have different cache keys
+        verify(mockLfClient, times(2))
+            .getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class));
     }
 
     @Test
@@ -400,39 +446,41 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
         // Setup first request for file1
         ResolveIdentityRequest request1 = mock(ResolveIdentityRequest.class);
         when(request1.property(PREFIX_PROPERTY)).thenReturn("s3://test-bucket/data/file1.txt");
-        when(request1.property(PERMISSION_PROPERTY)).thenReturn(Permission.READ);
-        doReturn(CompletableFuture.completedFuture(testCredentials)).when(mockOriginalProvider)
-                .resolveIdentity(request1);
+        when(request1.property(PERMISSION_PROPERTY)).thenReturn(Permission.READ.toString());
+        doReturn(CompletableFuture.completedFuture(testCredentials))
+            .when(mockOriginalProvider).resolveIdentity(request1);
 
         // Setup second request for file2 (same prefix)
         ResolveIdentityRequest request2 = mock(ResolveIdentityRequest.class);
         when(request2.property(PREFIX_PROPERTY)).thenReturn("s3://test-bucket/data/file2.txt");
-        when(request2.property(PERMISSION_PROPERTY)).thenReturn(Permission.READ);
-        doReturn(CompletableFuture.completedFuture(testCredentials)).when(mockOriginalProvider)
-                .resolveIdentity(request2);
+        when(request2.property(PERMISSION_PROPERTY)).thenReturn(Permission.READ.toString());
+        doReturn(CompletableFuture.completedFuture(testCredentials))
+            .when(mockOriginalProvider).resolveIdentity(request2);
 
-        // Setup Lake Formation to return credentials - temporarily using fallback
-        // TODO: Update when Lake Formation API classes are available
-        /*
+        // Setup Lake Formation to return credentials with wildcard prefix
+        TemporaryCredentials tempCreds = TemporaryCredentials.builder()
+            .accessKeyId(TEST_ACCESS_KEY)
+            .secretAccessKey(TEST_SECRET_KEY)
+            .sessionToken(TEST_SESSION_TOKEN)
+            .build();
+
+        GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
+            .credentials(tempCreds)
+            .accessibleDataLocations(List.of("s3://test-bucket/data/*"))
+            .build();
+
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
-            .thenReturn(GetTemporaryDataLocationCredentialsResponse.builder()
-                .credentials(mockCredentials)
-                .accessibleDataLocations(List.of("s3://test-bucket/data/file*"))
-                .build());
-        */
-
-        AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
-        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider).resolveIdentity(any(ResolveIdentityRequest.class));
+            .thenReturn(response);
 
         // First call for file1 - should hit Lake Formation
         AwsCredentialsIdentity credentials1 = identityProvider.resolveIdentity(request1).get();
 
-        // Second call for file2 (same prefix) - should hit cache
+        // Second call for file2 (same prefix) - should hit cache due to wildcard match
         AwsCredentialsIdentity credentials2 = identityProvider.resolveIdentity(request2).get();
 
         // Verify both calls return same cached credentials
         assertEquals(credentials1.accessKeyId(), credentials2.accessKeyId());
-        assertEquals("fallbackKey", credentials1.accessKeyId());
-        assertEquals("fallbackKey", credentials2.accessKeyId());
+        assertEquals(TEST_ACCESS_KEY, credentials1.accessKeyId());
+        assertEquals(TEST_ACCESS_KEY, credentials2.accessKeyId());
     }
 }

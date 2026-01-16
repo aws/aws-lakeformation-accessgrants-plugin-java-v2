@@ -5,11 +5,10 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.services.lakeformation.LakeFormationClient;
-// TODO: Verify these Lake Formation model classes exist in the current AWS SDK version
-// import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsRequest;
-// import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsResponse;
+import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsRequest;
+import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsResponse;
 import software.amazon.awssdk.services.lakeformation.model.LakeFormationException;
-// import software.amazon.awssdk.services.lakeformation.model.TemporaryCredentials;
+import software.amazon.awssdk.services.lakeformation.model.TemporaryCredentials;
 import software.amazon.awssdk.services.s3control.model.Permission;
 
 import java.time.Duration;
@@ -84,7 +83,7 @@ public class AccessGrantsCache {
         return null;
     }
 
-    private Object getCredentialsFromLfService(
+    private GetTemporaryDataLocationCredentialsResponse getCredentialsFromLfService(
             final LakeFormationClient lfClient,
             final CacheKey cacheKey) {
         if (lfClient == null) {
@@ -93,13 +92,10 @@ public class AccessGrantsCache {
         LOGGER.info("Fetching credentials from Lake Formation for s3Prefix: " + cacheKey.getS3Prefix()
             + ", permission: " + cacheKey.getPermission());
 
-        // TODO: Implement Lake Formation API call when classes are available
-        // return lfClient.getTemporaryDataLocationCredentials(
-        //     GetTemporaryDataLocationCredentialsRequest.builder()
-        //         .dataLocations(cacheKey.getS3Prefix())
-        //         .build()
-        // );
-        throw new UnsupportedOperationException("Lake Formation API integration pending");
+        GetTemporaryDataLocationCredentialsRequest request = GetTemporaryDataLocationCredentialsRequest.builder()
+            .dataLocations(cacheKey.getS3Prefix())
+            .build();
+        return lfClient.getTemporaryDataLocationCredentials(request);
     }
 
     private String processMatchedTarget(final String matchedGrantTarget) {
@@ -131,30 +127,26 @@ public class AccessGrantsCache {
         if (credentials == null) {
             LOGGER.info("Credentials not available in the cache. Fetching credentials from LakeFormation service.");
             try {
-                // TODO: Implement proper Lake Formation integration
-                // final GetTemporaryDataLocationCredentialsResponse response = getCredentialsFromLfService(
-                //         lfClient, cacheKey);
-                // final TemporaryCredentials temporaryCredentials = response.credentials();
-                // credentials = AwsSessionCredentials.create(
-                //     temporaryCredentials.accessKeyId(),
-                //     temporaryCredentials.secretAccessKey(),
-                //     temporaryCredentials.sessionToken()
-                // );
-                // final List<String> locations = response.accessibleDataLocations();
-                // if (locations.isEmpty()) {
-                //     throw new NoSuchElementException();
-                // }
-                // final String accessibleDataLocation = locations.get(0);
-                // LOGGER.info("Caching the credentials for s3Prefix:" + accessibleDataLocation
-                //     + " and permission: " + cacheKey.getPermission());
-                // accessGrantsCache.put(
-                //     new CacheKey(cacheKey, null, processMatchedTarget(accessibleDataLocation)),
-                //     credentials
-                // );
-                // LOGGER.info("Successfully retrieved credentials from Lake Formation service.");
-
-                // Temporary placeholder - will be implemented when Lake Formation classes are available
-                throw new UnsupportedOperationException("Lake Formation integration pending - missing API classes");
+                final GetTemporaryDataLocationCredentialsResponse response = getCredentialsFromLfService(
+                        lfClient, cacheKey);
+                final TemporaryCredentials temporaryCredentials = response.credentials();
+                credentials = AwsSessionCredentials.create(
+                    temporaryCredentials.accessKeyId(),
+                    temporaryCredentials.secretAccessKey(),
+                    temporaryCredentials.sessionToken()
+                );
+                final List<String> locations = response.accessibleDataLocations();
+                if (locations.isEmpty()) {
+                    throw new NoSuchElementException("No accessible data locations returned from Lake Formation");
+                }
+                final String accessibleDataLocation = locations.get(0);
+                LOGGER.info("Caching the credentials for s3Prefix:" + accessibleDataLocation
+                    + " and permission: " + cacheKey.getPermission());
+                accessGrantsCache.put(
+                    new CacheKey(cacheKey, null, processMatchedTarget(accessibleDataLocation)),
+                    credentials
+                );
+                LOGGER.info("Successfully retrieved credentials from Lake Formation service.");
             } catch (LakeFormationException e) {
                 LOGGER.info("Exception occurred while fetching the credentials from Lake Formation: "
                     + e.getMessage());
