@@ -46,7 +46,7 @@
     <caffeine.version>2.9.3</caffeine.version>
     <junit.version>5.10.2</junit.version>
     <mockito.version>4.11.0</mockito.version>
-    <jqwik.version>1.7.4</jqwik.version>
+    <jqwik.version>1.9.3</jqwik.version>
   </properties>
 
   <scm>
