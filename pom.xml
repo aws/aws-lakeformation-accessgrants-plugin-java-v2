@@ -7,7 +7,7 @@
   <artifactId>aws-lakeformation-accessgrants-java-plugin</artifactId>
   <packaging>jar</packaging>
   <!-- This plugin is also shipped as part of AWS SDK Bundle. Please update the plugin version shipped within AWS SDK bundle-->
-  <version>1.1</version>
+  <version>1.2</version>
   <name>${project.groupId}:${project.artifactId}</name>
   <description>AWS Lake Formation Access Grants Plugin for S3 operations</description>
   <url>https://github.com/aws/aws-lakeformation-accessgrants-plugin-java-v2</url>
