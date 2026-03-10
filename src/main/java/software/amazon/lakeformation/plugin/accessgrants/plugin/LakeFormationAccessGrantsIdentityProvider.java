@@ -91,8 +91,10 @@ public class LakeFormationAccessGrantsIdentityProvider implements IdentityProvid
                 LOGGER.info("Falling back to S3AccessGrant credential provider");
                 return s3AccessGrantsIdentityProvider.resolveIdentity(resolveIdentityRequest);
             } else {
-                return CompletableFuture.failedFuture(
+                CompletableFuture<AwsCredentialsIdentity> future = new CompletableFuture<>();
+                future.completeExceptionally(
                     SdkClientException.create("Failed to resolve Lake Formation credentials", e));
+                return future;
             }
         }
     }

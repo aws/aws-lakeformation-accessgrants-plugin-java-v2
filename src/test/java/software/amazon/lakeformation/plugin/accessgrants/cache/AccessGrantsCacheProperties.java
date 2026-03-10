@@ -13,7 +13,7 @@ import software.amazon.awssdk.services.lakeformation.model.LakeFormationExceptio
 import software.amazon.awssdk.services.lakeformation.model.TemporaryCredentials;
 import software.amazon.awssdk.services.s3control.model.Permission;
 
-import java.util.List;
+import java.util.Collections;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -81,7 +81,7 @@ public class AccessGrantsCacheProperties {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(returnedLocation))
+            .accessibleDataLocations(Collections.singletonList(returnedLocation))
             .build();
 
         when(mockClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -128,7 +128,7 @@ public class AccessGrantsCacheProperties {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(s3Prefix))
+            .accessibleDataLocations(Collections.singletonList(s3Prefix))
             .build();
 
         when(mockClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -234,7 +234,7 @@ public class AccessGrantsCacheProperties {
 
         GetTemporaryDataLocationCredentialsResponse prefixResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(prefixCreds)
-            .accessibleDataLocations(List.of(basePrefix))
+            .accessibleDataLocations(Collections.singletonList(basePrefix))
             .build();
 
         when(mockClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -280,7 +280,7 @@ public class AccessGrantsCacheProperties {
 
         GetTemporaryDataLocationCredentialsResponse readWriteResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(readWriteCreds)
-            .accessibleDataLocations(List.of(s3Prefix))
+            .accessibleDataLocations(Collections.singletonList(s3Prefix))
             .build();
 
         when(mockClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))

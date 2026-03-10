@@ -17,7 +17,7 @@ import software.amazon.awssdk.services.lakeformation.model.TemporaryCredentials;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.services.s3control.model.Permission;
 
-import java.util.List;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -76,7 +76,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of("s3://test-bucket/test-key"))
+            .accessibleDataLocations(Collections.singletonList("s3://test-bucket/test-key"))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -126,7 +126,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of("s3://test-bucket/test-key"))
+            .accessibleDataLocations(Collections.singletonList("s3://test-bucket/test-key"))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -182,7 +182,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(parentPrefix))
+            .accessibleDataLocations(Collections.singletonList(parentPrefix))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -216,7 +216,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(bucketPrefix))
+            .accessibleDataLocations(Collections.singletonList(bucketPrefix))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -249,7 +249,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(intermediatePrefix))
+            .accessibleDataLocations(Collections.singletonList(intermediatePrefix))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -282,7 +282,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse1 = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds1)
-            .accessibleDataLocations(List.of(prefix1))
+            .accessibleDataLocations(Collections.singletonList(prefix1))
             .build();
 
         String prefix2 = "s3://bucket-b/folder";
@@ -294,7 +294,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse2 = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds2)
-            .accessibleDataLocations(List.of(prefix2))
+            .accessibleDataLocations(Collections.singletonList(prefix2))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -329,7 +329,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(wildcardPrefix))
+            .accessibleDataLocations(Collections.singletonList(wildcardPrefix))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -363,7 +363,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(wildcardPrefix))
+            .accessibleDataLocations(Collections.singletonList(wildcardPrefix))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -398,7 +398,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(wildcardPrefix))
+            .accessibleDataLocations(Collections.singletonList(wildcardPrefix))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -432,7 +432,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(prefix))
+            .accessibleDataLocations(Collections.singletonList(prefix))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -466,7 +466,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(prefix))
+            .accessibleDataLocations(Collections.singletonList(prefix))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -500,7 +500,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(parentPrefix))
+            .accessibleDataLocations(Collections.singletonList(parentPrefix))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -534,7 +534,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponseRead = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCredsRead)
-            .accessibleDataLocations(List.of(prefix))
+            .accessibleDataLocations(Collections.singletonList(prefix))
             .build();
 
         TemporaryCredentials tempCredsReadWrite = TemporaryCredentials.builder()
@@ -545,7 +545,7 @@ public class AccessGrantsCacheTest {
 
         GetTemporaryDataLocationCredentialsResponse mockResponseReadWrite = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCredsReadWrite)
-            .accessibleDataLocations(List.of(prefix))
+            .accessibleDataLocations(Collections.singletonList(prefix))
             .build();
 
         when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))

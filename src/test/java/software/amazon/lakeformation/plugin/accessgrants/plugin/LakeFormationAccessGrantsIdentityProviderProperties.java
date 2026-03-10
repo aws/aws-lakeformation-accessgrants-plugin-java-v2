@@ -16,7 +16,7 @@ import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocat
 import software.amazon.awssdk.services.lakeformation.model.TemporaryCredentials;
 import software.amazon.awssdk.services.s3control.model.Permission;
 
-import java.util.List;
+import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -150,7 +150,7 @@ public class LakeFormationAccessGrantsIdentityProviderProperties {
 
         GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(s3Prefix))
+            .accessibleDataLocations(Collections.singletonList(s3Prefix))
             .build();
 
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))

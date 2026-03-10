@@ -23,7 +23,7 @@ import software.amazon.awssdk.services.lakeformation.model.LakeFormationExceptio
 import software.amazon.awssdk.services.lakeformation.model.TemporaryCredentials;
 import software.amazon.awssdk.services.s3control.model.Permission;
 
-import java.util.List;
+import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -107,7 +107,7 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
         GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(TEST_S3_PREFIX))
+            .accessibleDataLocations(Collections.singletonList(TEST_S3_PREFIX))
             .build();
 
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -254,7 +254,7 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
         GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(TEST_S3_PREFIX))
+            .accessibleDataLocations(Collections.singletonList(TEST_S3_PREFIX))
             .build();
 
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -286,7 +286,7 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
         GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(TEST_S3_PREFIX))
+            .accessibleDataLocations(Collections.singletonList(TEST_S3_PREFIX))
             .build();
 
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -379,7 +379,7 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
         GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(TEST_S3_PREFIX))
+            .accessibleDataLocations(Collections.singletonList(TEST_S3_PREFIX))
             .build();
 
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -421,7 +421,7 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
         GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of(TEST_S3_PREFIX))
+            .accessibleDataLocations(Collections.singletonList(TEST_S3_PREFIX))
             .build();
 
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
@@ -466,7 +466,7 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
         GetTemporaryDataLocationCredentialsResponse response = GetTemporaryDataLocationCredentialsResponse.builder()
             .credentials(tempCreds)
-            .accessibleDataLocations(List.of("s3://test-bucket/data/*"))
+            .accessibleDataLocations(Collections.singletonList("s3://test-bucket/data/*"))
             .build();
 
         when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
