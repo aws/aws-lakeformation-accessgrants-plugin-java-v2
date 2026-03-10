@@ -43,7 +43,7 @@
     <aws.sdk.version>2.41.16</aws.sdk.version>
     <s3accessgrants.version>2.4.1</s3accessgrants.version>
     <caffeine.version>2.9.3</caffeine.version>
-    <junit.version>5.10.5</junit.version>
+    <junit.version>6.0.3</junit.version>
     <mockito.version>4.11.0</mockito.version>
     <jqwik.version>1.7.4</jqwik.version>
   </properties>
