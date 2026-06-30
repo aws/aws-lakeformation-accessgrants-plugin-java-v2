@@ -5,6 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.services.lakeformation.LakeFormationClient;
+import software.amazon.awssdk.services.lakeformation.model.CredentialsScope;
 import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsRequest;
 import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsResponse;
 import software.amazon.awssdk.services.lakeformation.model.LakeFormationException;
@@ -89,13 +90,34 @@ public class AccessGrantsCache {
         if (lfClient == null) {
             throw new RuntimeException("Unknown error occurred when initializing LakeFormation client");
         }
+        final CredentialsScope credentialsScope = toCredentialsScope(cacheKey.getPermission());
         LOGGER.info("Fetching credentials from Lake Formation for s3Prefix: " + cacheKey.getS3Prefix()
-            + ", permission: " + cacheKey.getPermission());
+            + ", permission: " + cacheKey.getPermission() + ", credentialsScope: " + credentialsScope);
 
-        GetTemporaryDataLocationCredentialsRequest request = GetTemporaryDataLocationCredentialsRequest.builder()
-            .dataLocations(cacheKey.getS3Prefix())
-            .build();
-        return lfClient.getTemporaryDataLocationCredentials(request);
+        final GetTemporaryDataLocationCredentialsRequest.Builder requestBuilder =
+            GetTemporaryDataLocationCredentialsRequest.builder()
+                .dataLocations(cacheKey.getS3Prefix());
+        if (credentialsScope != null) {
+            requestBuilder.credentialsScope(credentialsScope);
+        }
+        return lfClient.getTemporaryDataLocationCredentials(requestBuilder.build());
+    }
+
+    /**
+     * Maps the S3 operation permission (derived from the incoming S3 request) to the Lake Formation
+     * {@link CredentialsScope}. Lake Formation only supports READ and READWRITE scopes - there is no
+     * write-only scope - so a WRITE permission is vended as READWRITE. Any unknown / future permission
+     * value (e.g. {@link Permission#UNKNOWN_TO_SDK_VERSION}) maps to null, so the request is made
+     * without a credentials scope rather than silently over-vending the broadest scope.
+     */
+    private CredentialsScope toCredentialsScope(final Permission permission) {
+        if (Permission.READ.equals(permission)) {
+            return CredentialsScope.READ;
+        }
+        if (Permission.WRITE.equals(permission) || Permission.READWRITE.equals(permission)) {
+            return CredentialsScope.READWRITE;
+        }
+        return null;
     }
 
     private String processMatchedTarget(final String matchedGrantTarget) {

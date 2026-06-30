@@ -4,12 +4,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.services.lakeformation.LakeFormationClient;
+import software.amazon.awssdk.services.lakeformation.model.CredentialsScope;
 import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsRequest;
 import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsResponse;
 import software.amazon.awssdk.services.lakeformation.model.LakeFormationException;
@@ -563,5 +565,58 @@ public class AccessGrantsCacheTest {
         verify(mockLakeFormationClient, times(2)).getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class));
         assertNotNull(result);
         assertEquals("readWriteAccessKey", result.accessKeyId());
+    }
+
+    /**
+     * Drives a single fetch for the given S3 operation permission and returns the
+     * {@link CredentialsScope} that the plugin sent to Lake Formation on the
+     * GetTemporaryDataLocationCredentials request.
+     */
+    private CredentialsScope captureScopeForPermission(final Permission permission) {
+        GetTemporaryDataLocationCredentialsResponse mockResponse = GetTemporaryDataLocationCredentialsResponse.builder()
+            .credentials(TemporaryCredentials.builder()
+                .accessKeyId("tempAccessKey")
+                .secretAccessKey("tempSecretKey")
+                .sessionToken("tempSessionToken")
+                .build())
+            .accessibleDataLocations(Collections.singletonList("s3://test-bucket/test-key"))
+            .build();
+
+        when(mockLakeFormationClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenReturn(mockResponse);
+
+        CacheKey key = new CacheKey(testCredentials, permission, "s3://test-bucket/test-key");
+        cache.getCredentials(mockLakeFormationClient, key, mockAccessDeniedCache);
+
+        ArgumentCaptor<GetTemporaryDataLocationCredentialsRequest> captor =
+            ArgumentCaptor.forClass(GetTemporaryDataLocationCredentialsRequest.class);
+        verify(mockLakeFormationClient).getTemporaryDataLocationCredentials(captor.capture());
+        return captor.getValue().credentialsScope();
+    }
+
+    @Test
+    public void testReadPermissionSendsReadCredentialsScope() {
+        // A READ S3 operation must request a READ-scoped credential from Lake Formation.
+        assertEquals(CredentialsScope.READ, captureScopeForPermission(Permission.READ));
+    }
+
+    @Test
+    public void testWritePermissionSendsReadWriteCredentialsScope() {
+        // Lake Formation has no write-only scope; a WRITE S3 operation must request READWRITE.
+        assertEquals(CredentialsScope.READWRITE, captureScopeForPermission(Permission.WRITE));
+    }
+
+    @Test
+    public void testReadWritePermissionSendsReadWriteCredentialsScope() {
+        assertEquals(CredentialsScope.READWRITE, captureScopeForPermission(Permission.READWRITE));
+    }
+
+    @Test
+    public void testUnknownPermissionSendsNoCredentialsScope() {
+        // An unknown / future permission (e.g. Permission.fromValue("DELETE") -> UNKNOWN_TO_SDK_VERSION)
+        // must NOT silently over-vend the broadest scope. The request is made with no credentialsScope.
+        Permission unknownPermission = Permission.fromValue("DELETE");
+        assertEquals(Permission.UNKNOWN_TO_SDK_VERSION, unknownPermission);
+        assertNull(captureScopeForPermission(unknownPermission));
     }
 }
