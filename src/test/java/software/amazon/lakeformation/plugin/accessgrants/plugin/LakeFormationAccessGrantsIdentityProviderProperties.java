@@ -4,6 +4,7 @@ import net.jqwik.api.*;
 import org.mockito.Mockito;
 import software.amazon.lakeformation.plugin.accessgrants.cache.AccessDeniedCache;
 import software.amazon.lakeformation.plugin.accessgrants.cache.AccessGrantsCache;
+import software.amazon.lakeformation.plugin.accessgrants.cache.ExceptionCache;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.core.exception.SdkClientException;
@@ -80,6 +81,7 @@ public class LakeFormationAccessGrantsIdentityProviderProperties {
             mockLfClient,
             accessDeniedCache,
             accessGrantsCache,
+            new ExceptionCache(),
             enableFallback,
             mockS3AccessGrantsProvider
         );
@@ -162,6 +164,7 @@ public class LakeFormationAccessGrantsIdentityProviderProperties {
             mockLfClient,
             accessDeniedCache,
             accessGrantsCache,
+            new ExceptionCache(),
             true,
             mockS3AccessGrantsProvider
         );

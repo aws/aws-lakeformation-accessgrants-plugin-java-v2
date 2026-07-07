@@ -3,6 +3,7 @@ package software.amazon.lakeformation.plugin.accessgrants.plugin;
 import software.amazon.lakeformation.plugin.accessgrants.cache.AccessDeniedCache;
 import software.amazon.lakeformation.plugin.accessgrants.cache.AccessGrantsCache;
 import software.amazon.lakeformation.plugin.accessgrants.cache.CacheKey;
+import software.amazon.lakeformation.plugin.accessgrants.cache.ExceptionCache;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.core.exception.SdkClientException;
@@ -26,6 +27,7 @@ public class LakeFormationAccessGrantsIdentityProvider implements IdentityProvid
     private final LakeFormationClient lfClient;
     private final AccessDeniedCache accessDeniedCache;
     private final AccessGrantsCache accessGrantsCache;
+    private final ExceptionCache exceptionCache;
     private final boolean enableFallback;
     private final IdentityProvider<? extends AwsCredentialsIdentity> s3AccessGrantsIdentityProvider;
 
@@ -34,12 +36,14 @@ public class LakeFormationAccessGrantsIdentityProvider implements IdentityProvid
             final LakeFormationClient lfClient,
             final AccessDeniedCache accessDeniedCache,
             final AccessGrantsCache accessGrantsCache,
+            final ExceptionCache exceptionCache,
             final boolean enableFallback,
             final IdentityProvider<? extends AwsCredentialsIdentity> s3AccessGrantsIdentityProvider) {
         this.originalProvider = originalProvider;
         this.lfClient = lfClient;
         this.accessDeniedCache = accessDeniedCache;
         this.accessGrantsCache = accessGrantsCache;
+        this.exceptionCache = exceptionCache;
         this.enableFallback = enableFallback;
         this.s3AccessGrantsIdentityProvider = s3AccessGrantsIdentityProvider;
     }
@@ -74,7 +78,7 @@ public class LakeFormationAccessGrantsIdentityProvider implements IdentityProvid
 
             // Get Lake Formation credentials
             final AwsCredentials lfTempCredentials = accessGrantsCache.getCredentials(
-                    lfClient, cacheKey, accessDeniedCache);
+                    lfClient, cacheKey, accessDeniedCache, exceptionCache);
 
             LOGGER.info("Successfully resolved Lake Formation credentials");
             if (lfTempCredentials instanceof AwsSessionCredentials) {

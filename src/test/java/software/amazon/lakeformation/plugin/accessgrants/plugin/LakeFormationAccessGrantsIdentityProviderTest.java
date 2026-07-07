@@ -2,6 +2,7 @@ package software.amazon.lakeformation.plugin.accessgrants.plugin;
 
 import software.amazon.lakeformation.plugin.accessgrants.cache.AccessDeniedCache;
 import software.amazon.lakeformation.plugin.accessgrants.cache.AccessGrantsCache;
+import software.amazon.lakeformation.plugin.accessgrants.cache.ExceptionCache;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +18,7 @@ import software.amazon.awssdk.identity.spi.AwsCredentialsIdentity;
 import software.amazon.awssdk.identity.spi.IdentityProvider;
 import software.amazon.awssdk.identity.spi.ResolveIdentityRequest;
 import software.amazon.awssdk.services.lakeformation.LakeFormationClient;
+import software.amazon.awssdk.services.lakeformation.model.ConflictException;
 import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsRequest;
 import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsResponse;
 import software.amazon.awssdk.services.lakeformation.model.LakeFormationException;
@@ -50,6 +52,7 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
     private AccessDeniedCache accessDeniedCache;
     private AccessGrantsCache accessGrantsCache;
+    private ExceptionCache exceptionCache;
 
     @Mock
     private IdentityProvider<? extends AwsCredentialsIdentity> mockS3AccessGrantsIdentityProvider;
@@ -72,12 +75,14 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
         // Use real cache instances
         accessDeniedCache = new AccessDeniedCache();
         accessGrantsCache = new AccessGrantsCache();
+        exceptionCache = new ExceptionCache();
 
         identityProvider = new LakeFormationAccessGrantsIdentityProvider(
             mockOriginalProvider,
             mockLfClient,
             accessDeniedCache,
             accessGrantsCache,
+            exceptionCache,
             true, // enableFallback
             mockS3AccessGrantsIdentityProvider
         );
@@ -196,6 +201,7 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
                 mockLfClient,
                 accessDeniedCache,
                 accessGrantsCache,
+                exceptionCache,
                 false, // fallback disabled
                 mockS3AccessGrantsIdentityProvider
             );
@@ -227,6 +233,7 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
                 mockLfClient,
                 accessDeniedCache,
                 accessGrantsCache,
+                exceptionCache,
                 true, // fallback enabled but no provider
                 null  // no fallback provider
             );
@@ -482,5 +489,46 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
         assertEquals(credentials1.accessKeyId(), credentials2.accessKeyId());
         assertEquals(TEST_ACCESS_KEY, credentials1.accessKeyId());
         assertEquals(TEST_ACCESS_KEY, credentials2.accessKeyId());
+    }
+
+    @Test
+    public void testNegativeCacheSuppressesLakeFormationForSiblingObjects()
+            throws ExecutionException, InterruptedException {
+        // First object under a folder fails with a ConflictException.
+        ResolveIdentityRequest requestA = mock(ResolveIdentityRequest.class);
+        when(requestA.property(PREFIX_PROPERTY)).thenReturn("s3://test-bucket/folder1/folder2/fileA.csv");
+        when(requestA.property(PERMISSION_PROPERTY)).thenReturn(Permission.READ.toString());
+        doReturn(CompletableFuture.completedFuture(testCredentials)).when(mockOriginalProvider)
+                .resolveIdentity(requestA);
+
+        // Sibling object under the same folder.
+        ResolveIdentityRequest requestB = mock(ResolveIdentityRequest.class);
+        when(requestB.property(PREFIX_PROPERTY)).thenReturn("s3://test-bucket/folder1/folder2/fileB.csv");
+        when(requestB.property(PERMISSION_PROPERTY)).thenReturn(Permission.READ.toString());
+        doReturn(CompletableFuture.completedFuture(testCredentials)).when(mockOriginalProvider)
+                .resolveIdentity(requestB);
+
+        ConflictException conflictException = ConflictException.builder()
+            .awsErrorDetails(AwsErrorDetails.builder().errorCode("ConflictException").build())
+            .message("Multiple resources exist with the same Amazon S3 location")
+            .build();
+        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenThrow(conflictException);
+
+        // Fallback to S3 Access Grants succeeds for both.
+        AwsCredentialsIdentity fallbackCredentials = AwsBasicCredentials.create("fallbackKey", "fallbackSecret");
+        doReturn(CompletableFuture.completedFuture(fallbackCredentials)).when(mockS3AccessGrantsIdentityProvider)
+                .resolveIdentity(any(ResolveIdentityRequest.class));
+
+        // First object: hits Lake Formation, gets Conflict, populates negative cache, falls back.
+        AwsCredentialsIdentity credentialsA = identityProvider.resolveIdentity(requestA).get();
+        // Sibling object: short-circuited by negative cache, falls back without calling Lake Formation.
+        AwsCredentialsIdentity credentialsB = identityProvider.resolveIdentity(requestB).get();
+
+        // Lake Formation called only once despite two distinct objects.
+        verify(mockLfClient, times(1))
+            .getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class));
+        assertEquals("fallbackKey", credentialsA.accessKeyId());
+        assertEquals("fallbackKey", credentialsB.accessKeyId());
     }
 }

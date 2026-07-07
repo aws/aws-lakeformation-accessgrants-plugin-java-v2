@@ -30,7 +30,8 @@ Custom identity provider that handles:
 
 ### Cache System
 - **AccessGrantsCache**: Caches temporary credentials with TTL-based expiration using Caffeine
-- **AccessDeniedCache**: Caches access denied responses to avoid repeated failed requests using Caffeine
+- **AccessDeniedCache**: Caches `AccessDenied` responses at the exact requested key to avoid repeated failed requests using Caffeine
+- **NegativeCache**: Caches non-retryable Lake Formation failures (`ConflictException`, `EntityNotFoundException`) to reduce load on Lake Formation. Because these errors are driven by the registration topology of an S3 location rather than a single object, an entry is stored for every parent prefix of the failed object up to the bucket root, and lookups walk the same parent prefixes. This lets a single failure short-circuit Lake Formation for sibling objects and sub-folders that share an ancestor, delegating them to the S3 Access Grants fallback. Entries are permission-agnostic and expire after a short TTL so a corrected registration is picked up automatically.
 - **CacheKey**: Composite key for cache operations based on credentials, permissions, and S3 prefix
 
 ## Usage

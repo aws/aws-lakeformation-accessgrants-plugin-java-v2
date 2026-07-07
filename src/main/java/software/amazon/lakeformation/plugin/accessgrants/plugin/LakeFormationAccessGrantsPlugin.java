@@ -2,6 +2,7 @@ package software.amazon.lakeformation.plugin.accessgrants.plugin;
 
 import software.amazon.lakeformation.plugin.accessgrants.cache.AccessDeniedCache;
 import software.amazon.lakeformation.plugin.accessgrants.cache.AccessGrantsCache;
+import software.amazon.lakeformation.plugin.accessgrants.cache.ExceptionCache;
 import software.amazon.awssdk.annotations.NotNull;
 import software.amazon.awssdk.core.SdkPlugin;
 import software.amazon.awssdk.core.SdkServiceClientConfiguration;
@@ -73,8 +74,10 @@ public class LakeFormationAccessGrantsPlugin implements SdkPlugin,
         final LakeFormationClient lfClient = LakeFormationClient.builder()
                 .region(Region.of(region))
                 .build();
+        LOGGER.info("Initializing caches...");
         final AccessDeniedCache accessDeniedCache = new AccessDeniedCache();
         final AccessGrantsCache accessGrantsCache = new AccessGrantsCache();
+        final ExceptionCache exceptionCache = new ExceptionCache();
 
         final IdentityProvider<? extends AwsCredentialsIdentity> originalIdentityProvider = serviceClientConfiguration
                 .credentialsProvider();
@@ -95,6 +98,7 @@ public class LakeFormationAccessGrantsPlugin implements SdkPlugin,
             lfClient,
             accessDeniedCache,
             accessGrantsCache,
+            exceptionCache,
             enableFallback,
             s3AccessGrantClientConfig.credentialsProvider()
         ));
