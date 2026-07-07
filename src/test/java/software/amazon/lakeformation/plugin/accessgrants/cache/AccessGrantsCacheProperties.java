@@ -88,12 +88,12 @@ public class AccessGrantsCacheProperties {
             .thenReturn(mockResponse);
 
         // First call - should cache with processed key
-        cache.getCredentials(mockClient, cacheKey, mockAccessDeniedCache);
+        cache.getCredentials(mockClient, cacheKey, mockAccessDeniedCache, new ExceptionCache());
         verify(mockClient, times(1)).getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class));
 
         // Second call with the expected cache key - should hit cache
         CacheKey lookupKey = new CacheKey(testCredentials, Permission.READ, expectedCacheKey + "/another/file.txt");
-        cache.getCredentials(mockClient, lookupKey, mockAccessDeniedCache);
+        cache.getCredentials(mockClient, lookupKey, mockAccessDeniedCache, new ExceptionCache());
 
         // Should still be only 1 API call if cache key was processed correctly
         verify(mockClient, times(1)).getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class));
@@ -137,7 +137,7 @@ public class AccessGrantsCacheProperties {
         CacheKey cacheKey = new CacheKey(testCredentials, permission, s3Prefix);
 
         // First call - should hit Lake Formation API
-        AwsCredentials result1 = cache.getCredentials(mockClient, cacheKey, mockAccessDeniedCache);
+        AwsCredentials result1 = cache.getCredentials(mockClient, cacheKey, mockAccessDeniedCache, new ExceptionCache());
 
         // Verify credentials match what was returned
         assert result1 instanceof AwsSessionCredentials : "Result should be AwsSessionCredentials";
@@ -147,7 +147,7 @@ public class AccessGrantsCacheProperties {
         assert sessionToken.equals(sessionCreds1.sessionToken()) : "Session token should match";
 
         // Second call - should hit cache, not API
-        AwsCredentials result2 = cache.getCredentials(mockClient, cacheKey, mockAccessDeniedCache);
+        AwsCredentials result2 = cache.getCredentials(mockClient, cacheKey, mockAccessDeniedCache, new ExceptionCache());
 
         // Verify cached credentials match retrieved credentials
         assert result1.accessKeyId().equals(result2.accessKeyId()) : "Cached credentials should match";
@@ -191,7 +191,7 @@ public class AccessGrantsCacheProperties {
         // First call - should throw and cache exception
         boolean firstCallThrew = false;
         try {
-            cache.getCredentials(mockClient, cacheKey, accessDeniedCache);
+            cache.getCredentials(mockClient, cacheKey, accessDeniedCache, new ExceptionCache());
         } catch (LakeFormationException e) {
             firstCallThrew = true;
             assert "AccessDenied".equals(e.awsErrorDetails().errorCode()) : "Should be AccessDenied error";
@@ -242,12 +242,12 @@ public class AccessGrantsCacheProperties {
 
         // Cache credentials at prefix level
         CacheKey prefixKey = new CacheKey(testCredentials, permission, basePrefix);
-        cache.getCredentials(mockClient, prefixKey, mockAccessDeniedCache);
+        cache.getCredentials(mockClient, prefixKey, mockAccessDeniedCache, new ExceptionCache());
 
         // Request for child path - should hit prefix-level cache
         String childPath = basePrefix + "/child/file.txt";
         CacheKey childKey = new CacheKey(testCredentials, permission, childPath);
-        AwsCredentials result = cache.getCredentials(mockClient, childKey, mockAccessDeniedCache);
+        AwsCredentials result = cache.getCredentials(mockClient, childKey, mockAccessDeniedCache, new ExceptionCache());
 
         // Verify prefix-level credentials were returned (only 1 API call)
         assert prefixAccessKey.equals(result.accessKeyId()) : "Should return prefix-level cached credentials";
@@ -288,11 +288,11 @@ public class AccessGrantsCacheProperties {
 
         // Cache credentials with READWRITE permission
         CacheKey readWriteKey = new CacheKey(testCredentials, Permission.READWRITE, s3Prefix);
-        cache.getCredentials(mockClient, readWriteKey, mockAccessDeniedCache);
+        cache.getCredentials(mockClient, readWriteKey, mockAccessDeniedCache, new ExceptionCache());
 
         // Request with READ or WRITE permission - should find READWRITE entry
         CacheKey requestKey = new CacheKey(testCredentials, requestPermission, s3Prefix);
-        AwsCredentials result = cache.getCredentials(mockClient, requestKey, mockAccessDeniedCache);
+        AwsCredentials result = cache.getCredentials(mockClient, requestKey, mockAccessDeniedCache, new ExceptionCache());
 
         // Verify READWRITE credentials were returned (only 1 API call)
         assert readWriteAccessKey.equals(result.accessKeyId()) : "Should return READWRITE cached credentials";

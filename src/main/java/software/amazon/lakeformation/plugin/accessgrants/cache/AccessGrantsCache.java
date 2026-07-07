@@ -132,7 +132,8 @@ public class AccessGrantsCache {
     public AwsCredentials getCredentials(
             final LakeFormationClient lfClient,
             final CacheKey cacheKey,
-            final AccessDeniedCache accessDeniedCache) {
+            final AccessDeniedCache accessDeniedCache,
+            final ExceptionCache exceptionCache) {
         LOGGER.info("Fetching credentials from LakeFormation for s3Prefix: " + cacheKey.getS3Prefix());
         AwsCredentials credentials = searchCredentialsAtPrefixLevel(cacheKey);
         if (credentials == null && (Permission.READ.equals(cacheKey.getPermission())
@@ -146,7 +147,15 @@ public class AccessGrantsCache {
                 || Permission.WRITE.equals(cacheKey.getPermission()))) {
             credentials = searchCredentialsAtCharacterLevel(new CacheKey(cacheKey, Permission.READWRITE));
         }
+        // If no credentials, check negative cache instead of re-calling Lake Formation for a non-retryable failure
         if (credentials == null) {
+            final LakeFormationException negativeCacheException = exceptionCache.getIfPrefixCached(cacheKey);
+            if (negativeCacheException != null) {
+                LOGGER.info("Found cached non-retryable exception for s3Prefix: "
+                    + cacheKey.getS3Prefix());
+                throw negativeCacheException;
+            }
+
             LOGGER.info("Credentials not available in the cache. Fetching credentials from LakeFormation service.");
             try {
                 final GetTemporaryDataLocationCredentialsResponse response = getCredentialsFromLfService(
@@ -175,6 +184,10 @@ public class AccessGrantsCache {
                 if ("AccessDenied".equals(e.awsErrorDetails().errorCode())) {
                     LOGGER.info("Caching the Access Denied request.");
                     accessDeniedCache.putValueInCache(cacheKey, e);
+                } else if (ExceptionCache.isNegativeCacheable(e)) {
+                    LOGGER.info("Caching the non-retryable Lake Formation exception in the negative cache: "
+                        + e.getClass().getSimpleName());
+                    exceptionCache.cacheForAllPrefixes(cacheKey, e);
                 }
                 throw e;
             }
