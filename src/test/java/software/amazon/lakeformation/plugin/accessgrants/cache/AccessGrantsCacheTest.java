@@ -1,15 +1,31 @@
 package software.amazon.lakeformation.plugin.accessgrants.cache;
 
+import java.util.Collections;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.Mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
+
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
+import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.services.lakeformation.LakeFormationClient;
 import software.amazon.awssdk.services.lakeformation.model.ConflictException;
 import software.amazon.awssdk.services.lakeformation.model.CredentialsScope;
@@ -18,14 +34,7 @@ import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocat
 import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocationCredentialsResponse;
 import software.amazon.awssdk.services.lakeformation.model.LakeFormationException;
 import software.amazon.awssdk.services.lakeformation.model.TemporaryCredentials;
-import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.services.s3control.model.Permission;
-
-import java.util.Collections;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
 
 /**
  * Test class for AccessGrantsCache.
@@ -587,7 +596,7 @@ public class AccessGrantsCacheTest {
         });
 
         // Conflict is negative-cacheable, not an AccessDenied.
-        verify(mockExceptionCache).cacheForAllPrefixes(testKey, conflictException);
+        verify(mockExceptionCache).cacheForImmediateParent(testKey, conflictException);
         verify(mockAccessDeniedCache, never()).putValueInCache(any(), any());
     }
 
@@ -605,7 +614,7 @@ public class AccessGrantsCacheTest {
             cache.getCredentials(mockLakeFormationClient, testKey, mockAccessDeniedCache, mockExceptionCache);
         });
 
-        verify(mockExceptionCache).cacheForAllPrefixes(testKey, entityNotFoundException);
+        verify(mockExceptionCache).cacheForImmediateParent(testKey, entityNotFoundException);
         verify(mockAccessDeniedCache, never()).putValueInCache(any(), any());
     }
 
@@ -617,7 +626,7 @@ public class AccessGrantsCacheTest {
             .awsErrorDetails(AwsErrorDetails.builder().errorCode("ConflictException").build())
             .message("Multiple resources exist with the same Amazon S3 location")
             .build();
-        when(mockExceptionCache.getIfPrefixCached(testKey)).thenReturn(cachedException);
+        when(mockExceptionCache.getIfParentCached(testKey)).thenReturn(cachedException);
 
         LakeFormationException thrown = assertThrows(LakeFormationException.class, () -> {
             cache.getCredentials(mockLakeFormationClient, testKey, mockAccessDeniedCache, mockExceptionCache);
@@ -690,9 +699,9 @@ public class AccessGrantsCacheTest {
         assertEquals("tempAccessKey", result.accessKeyId());
         verify(mockLakeFormationClient, times(1))
             .getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class));
-        // getIfPrefixCached is consulted only on the first (priming) call's positive-cache miss, never
+        // getIfParentCached is consulted only on the first (priming) call's positive-cache miss, never
         // on the second call which the positive cache serves - proving the positive cache wins.
-        verify(mockExceptionCache, times(1)).getIfPrefixCached(key);
+        verify(mockExceptionCache, times(1)).getIfParentCached(key);
     }
 
     /**

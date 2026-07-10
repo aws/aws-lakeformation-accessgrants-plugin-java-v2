@@ -1,27 +1,30 @@
 package software.amazon.lakeformation.plugin.accessgrants.cache;
 
+import java.time.Duration;
+import java.util.Optional;
+import java.util.logging.Logger;
+
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+
 import software.amazon.awssdk.services.lakeformation.model.ConflictException;
 import software.amazon.awssdk.services.lakeformation.model.EntityNotFoundException;
 import software.amazon.awssdk.services.lakeformation.model.LakeFormationException;
 import software.amazon.awssdk.services.s3control.model.Permission;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.logging.Logger;
-
 /**
  * Negative cache for non-retryable Lake Formation exceptions.
  *
- * <p>These errors are driven by the Lake Formation registration topology of an S3 location,
- * not by an individual object, and the plugin has no way of knowing which registered ancestor prefix
- * the failure applies to.
+ * <p>These errors are driven by the Lake Formation registration topology of an S3 location.
+ * An entry is stored only at the <em>immediate parent directory</em> of the failed object path.
+ * This prevents a single failure from poisoning unrelated paths in the same bucket while still
+ * suppressing repeated calls to sibling objects under the same folder.
  *
- * <p>Because of that, an entry is stored for <em>every parent prefix</em> of the failed object, from
- * its immediate parent directory up to the bucket root, and lookups walk the same parent prefixes.
- *
+ * <p>Example: a failure at {@code s3://bucket/folder1/folder2/file.csv} caches only at
+ * {@code s3://bucket/folder1/folder2}. Sibling objects like
+ * {@code s3://bucket/folder1/folder2/other.csv} share the same parent and will be
+ * short-circuited, but unrelated paths like {@code s3://bucket/folder1/otherFolder/file.csv}
+ * will NOT be affected.
  */
 public class ExceptionCache {
     private static final Logger LOGGER = Logger.getLogger(ExceptionCache.class.getName());
@@ -31,10 +34,11 @@ public class ExceptionCache {
     private static final String S3_SCHEME = "s3://";
 
     /**
-     * Negative-cache entries are permission-agnostic. Conflict / EntityNotFound errors reflect how a
-     * location is registered in Lake Formation, independent of the READ / WRITE / READWRITE scope of
-     * the request, so every permission is normalized to this single sentinel when building keys. This
-     * lets a WRITE failure suppress a subsequent READ request (and vice versa) for the same prefix.
+     * Negative-cache entries are permission-agnostic. Conflict / EntityNotFound errors reflect how
+     * a location is registered in Lake Formation, independent of the READ / WRITE / READWRITE
+     * scope of the request, so every permission is normalized to this single sentinel when building
+     * keys. This lets a WRITE failure suppress a subsequent READ request (and vice versa) for the
+     * same prefix.
      */
     private static final Permission NEGATIVE_CACHE_PERMISSION = Permission.READWRITE;
 
@@ -52,39 +56,50 @@ public class ExceptionCache {
     }
 
     /**
-     * @return true when the exception should be remembered by the negative cache. Only the
-     *     non-retryable, registration-driven Lake Formation errors qualify; retryable errors (e.g.
-     *     ThrottledException) and AccessDenied (handled by {@link AccessDeniedCache}) must not.
+     * Returns true when the exception should be remembered by the negative cache. Only the
+     * non-retryable, registration-driven Lake Formation errors qualify; retryable errors (e.g.
+     * ThrottledException) and AccessDenied (handled by {@link AccessDeniedCache}) must not.
      */
     public static boolean isNegativeCacheable(final LakeFormationException e) {
         return e instanceof ConflictException || e instanceof EntityNotFoundException;
     }
 
     /**
-     * Caches the exception for every parent prefix of the requested key, from the failed object's
-     * immediate parent directory up to (and including) the bucket root.
+     * Caches the exception at the immediate parent directory of the requested key only.
+     *
+     * <p>For example, given {@code s3://bucket/folder1/folder2/file.csv}, the entry is cached
+     * at {@code s3://bucket/folder1/folder2}. This prevents cross-contamination between
+     * unrelated table paths while still suppressing repeated calls to sibling objects
+     * under the same folder.
+     *
+     * @param cacheKey the original request cache key (with full object path)
+     * @param e the non-retryable exception to cache
      */
-    public void cacheForAllPrefixes(final CacheKey cacheKey, final LakeFormationException e) {
-        final List<String> prefixes = ancestorPrefixesUpToBucket(cacheKey.getS3Prefix());
-        LOGGER.info("Caching negative response for " + prefixes.size() + " parent prefixes of: "
-            + cacheKey.getS3Prefix());
-        for (final String prefix : prefixes) {
-            LOGGER.info("Caching key: " + prefix);
-            exceptionCache.put(negativeKey(cacheKey, prefix), e);
+    public void cacheForImmediateParent(final CacheKey cacheKey,
+                                        final LakeFormationException e) {
+        final Optional<String> parent = immediateParent(cacheKey.getS3Prefix());
+        if (parent.isPresent()) {
+            LOGGER.info("Caching negative response at immediate parent: " + parent.get()
+                + " for path: " + cacheKey.getS3Prefix());
+            exceptionCache.put(negativeKey(cacheKey, parent.get()), e);
+        } else {
+            LOGGER.info("No cacheable parent found for path: " + cacheKey.getS3Prefix());
         }
     }
 
     /**
-     * Walks the parent prefixes of the requested key and returns the first cached exception found, or
-     * null if none of the ancestors have a negative entry. The same parent-prefix walk is used on
-     * store and lookup, so a failure recorded for one object is found for any sibling that shares an
-     * ancestor prefix.
+     * Checks only the immediate parent of the requested key for a cached exception.
+     *
+     * @param cacheKey the request cache key to check
+     * @return the cached exception if the immediate parent has a negative entry, or null if not
      */
-    public LakeFormationException getIfPrefixCached(final CacheKey cacheKey) {
-        for (final String prefix : ancestorPrefixesUpToBucket(cacheKey.getS3Prefix())) {
-            final LakeFormationException cached = exceptionCache.getIfPresent(negativeKey(cacheKey, prefix));
+    public LakeFormationException getIfParentCached(final CacheKey cacheKey) {
+        final Optional<String> parent = immediateParent(cacheKey.getS3Prefix());
+        if (parent.isPresent()) {
+            final LakeFormationException cached =
+                exceptionCache.getIfPresent(negativeKey(cacheKey, parent.get()));
             if (cached != null) {
-                LOGGER.info("Found cached negative response at prefix: " + prefix);
+                LOGGER.info("Found cached negative response at parent: " + parent.get());
                 return cached;
             }
         }
@@ -92,51 +107,72 @@ public class ExceptionCache {
     }
 
     /**
-     * Builds a permission-agnostic negative-cache key for a given prefix
+     * Builds a permission-agnostic negative-cache key for a given prefix.
      */
     private CacheKey negativeKey(final CacheKey cacheKey, final String prefix) {
         return new CacheKey(cacheKey.getCredentials(), NEGATIVE_CACHE_PERMISSION, prefix);
     }
 
     /**
-     * Builds the ordered list of ancestor prefixes for an S3 key, from the immediate parent directory
-     * up to and including the bucket root ("s3://bucket").
+     * Returns the immediate parent directory of an S3 path.
      *
-     * The leaf segment (the object name) is dropped so that per-object keys never bloat the cache.
-     * Any trailing "/" or "/*" is normalized away first so store and lookup keys are consistent.
+     * <p>If the path ends with "/*" or "/", it is a directory reference and the normalized form
+     * IS the parent directory (objects under it share this as their parent). Otherwise, the leaf
+     * segment (file name) is dropped to find the parent.
+     *
+     * <p>Examples:
+     * <ul>
+     *   <li>{@code s3://bucket/f1/f2/file.csv} returns {@code s3://bucket/f1/f2}</li>
+     *   <li>{@code s3://bucket/folder1/file.csv} returns {@code s3://bucket/folder1}</li>
+     *   <li>{@code s3://bucket/file.csv} returns {@code s3://bucket}</li>
+     *   <li>{@code s3://bucket/folder1/folder2/*} returns {@code s3://bucket/folder1/folder2}
+     *       (directory reference)</li>
+     *   <li>{@code s3://bucket/folder1/folder2/} returns {@code s3://bucket/folder1/folder2}
+     *       (directory reference)</li>
+     *   <li>{@code s3://bucket} returns empty (no parent above bucket root)</li>
+     * </ul>
+     *
+     * @param s3Prefix the full S3 path
+     * @return the immediate parent directory, or empty if no valid parent exists
      */
-    private List<String> ancestorPrefixesUpToBucket(final String s3Prefix) {
-        final List<String> prefixes = new ArrayList<>();
-        String prefix = normalize(s3Prefix);
-        if (!prefix.startsWith(S3_SCHEME)) {
-            // Unexpected format - cache nothing
-            return prefixes;
+    private Optional<String> immediateParent(final String s3Prefix) {
+        final String normalized = normalize(s3Prefix);
+        if (!normalized.startsWith(S3_SCHEME)) {
+            return Optional.empty();
         }
 
         // First "/" after the scheme separates the bucket from the key.
-        final int bucketRootEnd = prefix.indexOf('/', S3_SCHEME.length());
+        final int bucketRootEnd = normalized.indexOf('/', S3_SCHEME.length());
         if (bucketRootEnd == -1) {
+            // If original was a directory reference at bucket root (e.g., "s3://bucket/*"),
+            // the normalized bucket root IS the parent for objects under it.
+            if (s3Prefix.endsWith("/*") || s3Prefix.endsWith("/")) {
+                return Optional.of(normalized);
+            }
             // Only a bucket root was supplied; there is nothing above it to cache.
-            prefixes.add(prefix);
-            return prefixes;
+            return Optional.empty();
         }
 
-        final String bucketRoot = prefix.substring(0, bucketRootEnd);
-        // Drop the leaf segment, then walk parents up to the bucket root.
-        int lastSlash = prefix.lastIndexOf('/');
-        while (lastSlash > bucketRootEnd) {
-            prefix = prefix.substring(0, lastSlash);
-            prefixes.add(prefix);
-            lastSlash = prefix.lastIndexOf('/');
+        // If the original path ended with /* or /, it is a directory reference.
+        // The normalized form IS the parent directory for objects under it.
+        if (s3Prefix.endsWith("/*") || s3Prefix.endsWith("/")) {
+            return Optional.of(normalized);
         }
-        prefixes.add(bucketRoot);
-        return prefixes;
+
+        // Drop the leaf segment to get the immediate parent.
+        final int lastSlash = normalized.lastIndexOf('/');
+        if (lastSlash > bucketRootEnd) {
+            return Optional.of(normalized.substring(0, lastSlash));
+        }
+        // The path is directly under the bucket root (e.g., s3://bucket/file.csv).
+        final String bucketRoot = normalized.substring(0, bucketRootEnd);
+        return Optional.of(bucketRoot);
     }
 
     /**
-     * Strips a trailing "/*" or "/" from a prefix so directory / wildcard requests produce the same
-     * keys as object requests under the same location. Mirrors the normalization done for the
-     * positive cache when processing a matched grant target.
+     * Strips a trailing "/*" or "/" from a prefix so directory / wildcard requests produce the
+     * same keys as object requests under the same location. Mirrors the normalization done for
+     * the positive cache when processing a matched grant target.
      */
     private String normalize(final String prefix) {
         if (prefix.endsWith("/*")) {
