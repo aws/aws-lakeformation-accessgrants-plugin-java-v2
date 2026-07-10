@@ -1,7 +1,13 @@
 package software.amazon.lakeformation.plugin.accessgrants.cache;
 
+import java.time.Duration;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.logging.Logger;
+
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.services.lakeformation.LakeFormationClient;
@@ -11,11 +17,6 @@ import software.amazon.awssdk.services.lakeformation.model.GetTemporaryDataLocat
 import software.amazon.awssdk.services.lakeformation.model.LakeFormationException;
 import software.amazon.awssdk.services.lakeformation.model.TemporaryCredentials;
 import software.amazon.awssdk.services.s3control.model.Permission;
-
-import java.time.Duration;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.logging.Logger;
 
 /**
  * Cache for storing access grants credentials.
@@ -149,7 +150,7 @@ public class AccessGrantsCache {
         }
         // If no credentials, check negative cache instead of re-calling Lake Formation for a non-retryable failure
         if (credentials == null) {
-            final LakeFormationException negativeCacheException = exceptionCache.getIfPrefixCached(cacheKey);
+            final LakeFormationException negativeCacheException = exceptionCache.getIfParentCached(cacheKey);
             if (negativeCacheException != null) {
                 LOGGER.info("Found cached non-retryable exception for s3Prefix: "
                     + cacheKey.getS3Prefix());
@@ -187,7 +188,7 @@ public class AccessGrantsCache {
                 } else if (ExceptionCache.isNegativeCacheable(e)) {
                     LOGGER.info("Caching the non-retryable Lake Formation exception in the negative cache: "
                         + e.getClass().getSimpleName());
-                    exceptionCache.cacheForAllPrefixes(cacheKey, e);
+                    exceptionCache.cacheForImmediateParent(cacheKey, e);
                 }
                 throw e;
             }
