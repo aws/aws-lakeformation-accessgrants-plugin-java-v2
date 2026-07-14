@@ -25,16 +25,19 @@ public class LakeFormationAccessGrantsPlugin implements SdkPlugin,
 
     private static final Logger LOGGER = Logger.getLogger(LakeFormationAccessGrantsPlugin.class.getName());
     private static final String USER_AGENT = "lakeformation-access-grants-plugin";
-    private static final boolean DEFAULT_FALLBACK_SETTING = true;
+    private static final boolean DEFAULT_S3_ACCESS_GRANTS_FALLBACK_SETTING = true;
+    private static final boolean DEFAULT_DIRECT_IAM_FALLBACK_SETTING = false;
     private static final boolean DEFAULT_ENABLED_SETTING = false;
 
     private final boolean enabled;
-    private final boolean enableFallback;
+    private final boolean enableS3AccessGrantsFallback;
+    private final boolean enableDirectIAMFallback;
     private final String userAgent;
 
     LakeFormationAccessGrantsPlugin(final BuilderImpl builder) {
         this.enabled = builder.enabled;
-        this.enableFallback = builder.enableFallback;
+        this.enableS3AccessGrantsFallback = builder.enableS3AccessGrantsFallback;
+        this.enableDirectIAMFallback = builder.enableDirectIAMFallback;
         this.userAgent = builder.userAgent;
     }
 
@@ -46,8 +49,21 @@ public class LakeFormationAccessGrantsPlugin implements SdkPlugin,
         return this.enabled;
     }
 
-    boolean enableFallback() {
-        return this.enableFallback;
+    /**
+     * Returns whether the S3 Access Grants fallback is enabled.
+     * When true, Lake Formation failures fall back to S3 Access Grants (which in turn falls back to IAM).
+     */
+    boolean enableS3AccessGrantsFallback() {
+        return this.enableS3AccessGrantsFallback;
+    }
+
+    /**
+     * Returns whether the direct IAM fallback is enabled.
+     * When true (and S3 Access Grants fallback is not used), Lake Formation failures fall back
+     * directly to the original IAM credentials provider, skipping S3 Access Grants.
+     */
+    boolean enableDirectIAMFallback() {
+        return this.enableDirectIAMFallback;
     }
 
     @Override
@@ -58,11 +74,17 @@ public class LakeFormationAccessGrantsPlugin implements SdkPlugin,
         }
 
         LOGGER.info("Configuring S3 Clients to use Lake Formation as a permission layer!");
-        LOGGER.info("Running the Lake Formation Access grants plugin with fallback setting enabled: " + enableFallback());
+        LOGGER.info("Running the Lake Formation Access grants plugin with S3 Access Grants fallback enabled: "
+                + enableS3AccessGrantsFallback() + ", direct IAM fallback enabled: " + enableDirectIAMFallback());
 
-        if (!enableFallback()) {
-            LOGGER.warning("Fallback not opted in! S3 Client will not fall back to evaluate policies if "
+        if (!enableS3AccessGrantsFallback() && !enableDirectIAMFallback()) {
+            LOGGER.warning("No fallback opted in! S3 Client will not fall back to evaluate policies if "
                     + "permissions are not provided through Lake Formation!");
+        } else if (enableS3AccessGrantsFallback()) {
+            LOGGER.info("Lake Formation failures will fall back to S3 Access Grants (then IAM).");
+        } else {
+            LOGGER.info("Lake Formation failures will fall back directly to the original credentials provider "
+                    + "(IAM), skipping S3 Access Grants.");
         }
 
         final S3ServiceClientConfiguration.Builder serviceClientConfiguration =
@@ -84,7 +106,7 @@ public class LakeFormationAccessGrantsPlugin implements SdkPlugin,
 
         // Configure S3AccessGrantsPlugin to get its identity provider
         final S3AccessGrantsPlugin s3AccessGrantsPlugin = S3AccessGrantsPlugin.builder()
-                .enableFallback(enableFallback)
+                .enableFallback(enableS3AccessGrantsFallback)
                 .build();
 
         s3AccessGrantsPlugin.configureClient(config);
@@ -99,7 +121,8 @@ public class LakeFormationAccessGrantsPlugin implements SdkPlugin,
             accessDeniedCache,
             accessGrantsCache,
             exceptionCache,
-            enableFallback,
+            enableS3AccessGrantsFallback,
+            enableDirectIAMFallback,
             s3AccessGrantClientConfig.credentialsProvider()
         ));
 
@@ -113,18 +136,21 @@ public class LakeFormationAccessGrantsPlugin implements SdkPlugin,
 
     public static final class BuilderImpl implements AccessGrantsPluginBuilder {
         private boolean enabled;
-        private boolean enableFallback;
+        private boolean enableS3AccessGrantsFallback;
+        private boolean enableDirectIAMFallback;
         private String userAgent;
 
         BuilderImpl() {
             this.enabled = DEFAULT_ENABLED_SETTING;
-            this.enableFallback = DEFAULT_FALLBACK_SETTING;
+            this.enableS3AccessGrantsFallback = DEFAULT_S3_ACCESS_GRANTS_FALLBACK_SETTING;
+            this.enableDirectIAMFallback = DEFAULT_DIRECT_IAM_FALLBACK_SETTING;
             this.userAgent = USER_AGENT;
         }
 
         BuilderImpl(LakeFormationAccessGrantsPlugin plugin) {
             this.enabled = plugin.enabled;
-            this.enableFallback = plugin.enableFallback;
+            this.enableS3AccessGrantsFallback = plugin.enableS3AccessGrantsFallback;
+            this.enableDirectIAMFallback = plugin.enableDirectIAMFallback;
             this.userAgent = plugin.userAgent;
         }
 
@@ -140,8 +166,16 @@ public class LakeFormationAccessGrantsPlugin implements SdkPlugin,
         }
 
         @Override
-        public AccessGrantsPluginBuilder enableFallback(@NotNull Boolean choice) {
-            this.enableFallback = choice == null ? DEFAULT_FALLBACK_SETTING : choice;
+        public AccessGrantsPluginBuilder enableS3AccessGrantsFallback(@NotNull Boolean choice) {
+            this.enableS3AccessGrantsFallback = choice == null
+                    ? DEFAULT_S3_ACCESS_GRANTS_FALLBACK_SETTING : choice;
+            return this;
+        }
+
+        @Override
+        public AccessGrantsPluginBuilder enableDirectIAMFallback(@NotNull Boolean choice) {
+            this.enableDirectIAMFallback = choice == null
+                    ? DEFAULT_DIRECT_IAM_FALLBACK_SETTING : choice;
             return this;
         }
 

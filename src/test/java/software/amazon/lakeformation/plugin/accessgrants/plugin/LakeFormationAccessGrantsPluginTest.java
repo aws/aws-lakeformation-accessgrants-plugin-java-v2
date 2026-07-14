@@ -49,7 +49,7 @@ public class LakeFormationAccessGrantsPluginTest {
 
         plugin = LakeFormationAccessGrantsPlugin.builder()
             .enabled(true)
-            .enableFallback(true)
+            .enableS3AccessGrantsFallback(true)
             .build();
     }
 
@@ -58,18 +58,22 @@ public class LakeFormationAccessGrantsPluginTest {
         LakeFormationAccessGrantsPlugin defaultPlugin = LakeFormationAccessGrantsPlugin.builder().build();
 
         assertNotNull(defaultPlugin);
-        assertTrue(defaultPlugin.enableFallback());
+        // S3 Access Grants fallback is on by default; direct IAM fallback is off by default
+        assertTrue(defaultPlugin.enableS3AccessGrantsFallback());
+        assertFalse(defaultPlugin.enableDirectIAMFallback());
     }
 
     @Test
     public void testPluginBuilderWithCustomSettings() {
         LakeFormationAccessGrantsPlugin customPlugin = LakeFormationAccessGrantsPlugin.builder()
-            .enableFallback(false)
+            .enableS3AccessGrantsFallback(false)
+            .enableDirectIAMFallback(true)
             .userAgent("custom-agent")
             .build();
 
         assertNotNull(customPlugin);
-        assertFalse(customPlugin.enableFallback());
+        assertFalse(customPlugin.enableS3AccessGrantsFallback());
+        assertTrue(customPlugin.enableDirectIAMFallback());
     }
 
     @Test
@@ -101,23 +105,75 @@ public class LakeFormationAccessGrantsPluginTest {
     @Test
     public void testToBuilder() {
         LakeFormationAccessGrantsPlugin originalPlugin = LakeFormationAccessGrantsPlugin.builder()
-            .enableFallback(false)
+            .enableS3AccessGrantsFallback(false)
+            .enableDirectIAMFallback(true)
             .userAgent("test-agent")
             .build();
 
         LakeFormationAccessGrantsPlugin copiedPlugin = originalPlugin.toBuilder().build();
 
-        assertEquals(originalPlugin.enableFallback(), copiedPlugin.enableFallback());
+        assertEquals(originalPlugin.enableS3AccessGrantsFallback(), copiedPlugin.enableS3AccessGrantsFallback());
+        assertEquals(originalPlugin.enableDirectIAMFallback(), copiedPlugin.enableDirectIAMFallback());
     }
 
     @Test
-    public void testBuilderEnableFallbackWithNull() {
+    public void testBuilderEnableS3AccessGrantsFallbackWithNull() {
         LakeFormationAccessGrantsPlugin plugin = LakeFormationAccessGrantsPlugin.builder()
-            .enableFallback(null)
+            .enableS3AccessGrantsFallback(null)
             .build();
 
         // Should default to true when null is passed
-        assertTrue(plugin.enableFallback());
+        assertTrue(plugin.enableS3AccessGrantsFallback());
+    }
+
+    @Test
+    public void testBuilderEnableDirectIAMFallbackWithNull() {
+        LakeFormationAccessGrantsPlugin plugin = LakeFormationAccessGrantsPlugin.builder()
+            .enableDirectIAMFallback(null)
+            .build();
+
+        // Should default to false when null is passed
+        assertFalse(plugin.enableDirectIAMFallback());
+    }
+
+    @Test
+    public void testDirectIAMFallbackDefaultIsFalse() {
+        LakeFormationAccessGrantsPlugin plugin = LakeFormationAccessGrantsPlugin.builder()
+            .enabled(true)
+            .build();
+
+        // Default must be false for backward compatibility (LF -> S3AG -> IAM stays the default chain)
+        assertFalse(plugin.enableDirectIAMFallback());
+        assertTrue(plugin.enableS3AccessGrantsFallback());
+    }
+
+    @Test
+    public void testBuilderAcceptsDirectIAMFallback() {
+        LakeFormationAccessGrantsPlugin plugin = LakeFormationAccessGrantsPlugin.builder()
+            .enabled(true)
+            .enableS3AccessGrantsFallback(false)
+            .enableDirectIAMFallback(true)
+            .build();
+
+        assertTrue(plugin.enabled());
+        assertFalse(plugin.enableS3AccessGrantsFallback());
+        assertTrue(plugin.enableDirectIAMFallback());
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    public void testDeprecatedEnableFallbackForwardsToS3AccessGrantsFallback() {
+        // The deprecated enableFallback(...) method is retained for backward compatibility and
+        // must forward to enableS3AccessGrantsFallback(...).
+        LakeFormationAccessGrantsPlugin enabledPlugin = LakeFormationAccessGrantsPlugin.builder()
+            .enableFallback(true)
+            .build();
+        assertTrue(enabledPlugin.enableS3AccessGrantsFallback());
+
+        LakeFormationAccessGrantsPlugin disabledPlugin = LakeFormationAccessGrantsPlugin.builder()
+            .enableFallback(false)
+            .build();
+        assertFalse(disabledPlugin.enableS3AccessGrantsFallback());
     }
 
     @Test
@@ -200,13 +256,15 @@ public class LakeFormationAccessGrantsPluginTest {
     public void testToBuilderPreservesEnabledSetting() {
         LakeFormationAccessGrantsPlugin originalPlugin = LakeFormationAccessGrantsPlugin.builder()
             .enabled(false)
-            .enableFallback(false)
+            .enableS3AccessGrantsFallback(false)
+            .enableDirectIAMFallback(true)
             .userAgent("test-agent")
             .build();
 
         LakeFormationAccessGrantsPlugin copiedPlugin = originalPlugin.toBuilder().build();
 
         assertEquals(originalPlugin.enabled(), copiedPlugin.enabled());
-        assertEquals(originalPlugin.enableFallback(), copiedPlugin.enableFallback());
+        assertEquals(originalPlugin.enableS3AccessGrantsFallback(), copiedPlugin.enableS3AccessGrantsFallback());
+        assertEquals(originalPlugin.enableDirectIAMFallback(), copiedPlugin.enableDirectIAMFallback());
     }
 }
