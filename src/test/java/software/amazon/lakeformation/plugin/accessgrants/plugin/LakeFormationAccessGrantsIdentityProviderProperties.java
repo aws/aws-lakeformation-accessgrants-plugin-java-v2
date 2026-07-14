@@ -82,7 +82,8 @@ public class LakeFormationAccessGrantsIdentityProviderProperties {
             accessDeniedCache,
             accessGrantsCache,
             new ExceptionCache(),
-            enableFallback,
+            enableFallback, // enableS3AccessGrantsFallback
+            false,          // enableDirectIAMFallback
             mockS3AccessGrantsProvider
         );
 
@@ -165,7 +166,8 @@ public class LakeFormationAccessGrantsIdentityProviderProperties {
             accessDeniedCache,
             accessGrantsCache,
             new ExceptionCache(),
-            true,
+            true,  // enableS3AccessGrantsFallback
+            false, // enableDirectIAMFallback
             mockS3AccessGrantsProvider
         );
 

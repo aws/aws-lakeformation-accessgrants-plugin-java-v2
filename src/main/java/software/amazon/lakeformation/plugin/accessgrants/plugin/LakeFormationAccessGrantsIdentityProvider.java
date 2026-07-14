@@ -28,23 +28,27 @@ public class LakeFormationAccessGrantsIdentityProvider implements IdentityProvid
     private final AccessDeniedCache accessDeniedCache;
     private final AccessGrantsCache accessGrantsCache;
     private final ExceptionCache exceptionCache;
-    private final boolean enableFallback;
+    private final boolean enableS3AccessGrantsFallback;
+    private final boolean enableDirectIAMFallback;
     private final IdentityProvider<? extends AwsCredentialsIdentity> s3AccessGrantsIdentityProvider;
 
+    @SuppressWarnings("checkstyle:ParameterNumber")
     public LakeFormationAccessGrantsIdentityProvider(
             final IdentityProvider<? extends AwsCredentialsIdentity> originalProvider,
             final LakeFormationClient lfClient,
             final AccessDeniedCache accessDeniedCache,
             final AccessGrantsCache accessGrantsCache,
             final ExceptionCache exceptionCache,
-            final boolean enableFallback,
+            final boolean enableS3AccessGrantsFallback,
+            final boolean enableDirectIAMFallback,
             final IdentityProvider<? extends AwsCredentialsIdentity> s3AccessGrantsIdentityProvider) {
         this.originalProvider = originalProvider;
         this.lfClient = lfClient;
         this.accessDeniedCache = accessDeniedCache;
         this.accessGrantsCache = accessGrantsCache;
         this.exceptionCache = exceptionCache;
-        this.enableFallback = enableFallback;
+        this.enableS3AccessGrantsFallback = enableS3AccessGrantsFallback;
+        this.enableDirectIAMFallback = enableDirectIAMFallback;
         this.s3AccessGrantsIdentityProvider = s3AccessGrantsIdentityProvider;
     }
 
@@ -91,9 +95,12 @@ public class LakeFormationAccessGrantsIdentityProvider implements IdentityProvid
                     lfTempCredentials.accessKeyId(), lfTempCredentials.secretAccessKey()));
         } catch (Exception e) {
             LOGGER.info("Lake Formation exception: " + e.getMessage());
-            if (enableFallback && s3AccessGrantsIdentityProvider != null) {
+            if (enableS3AccessGrantsFallback && s3AccessGrantsIdentityProvider != null) {
                 LOGGER.info("Falling back to S3AccessGrant credential provider");
                 return s3AccessGrantsIdentityProvider.resolveIdentity(resolveIdentityRequest);
+            } else if (enableDirectIAMFallback) {
+                LOGGER.info("Falling back to original credential provider (IAM)");
+                return originalProvider.resolveIdentity(resolveIdentityRequest);
             } else {
                 CompletableFuture<AwsCredentialsIdentity> future = new CompletableFuture<>();
                 future.completeExceptionally(

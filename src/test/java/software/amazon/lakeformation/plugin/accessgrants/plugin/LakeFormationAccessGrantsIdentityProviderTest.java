@@ -83,7 +83,8 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
             accessDeniedCache,
             accessGrantsCache,
             exceptionCache,
-            true, // enableFallback
+            true,  // enableS3AccessGrantsFallback
+            false, // enableDirectIAMFallback
             mockS3AccessGrantsIdentityProvider
         );
 
@@ -193,8 +194,8 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
     }
 
     @Test
-    public void testResolveIdentityFailsWhenFallbackDisabled() {
-        // Create provider with fallback disabled
+    public void testResolveIdentityFailsWhenAllFallbacksDisabled() {
+        // Create provider with both fallbacks disabled
         LakeFormationAccessGrantsIdentityProvider providerWithoutFallback =
             new LakeFormationAccessGrantsIdentityProvider(
                 mockOriginalProvider,
@@ -202,7 +203,8 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
                 accessDeniedCache,
                 accessGrantsCache,
                 exceptionCache,
-                false, // fallback disabled
+                false, // enableS3AccessGrantsFallback
+                false, // enableDirectIAMFallback
                 mockS3AccessGrantsIdentityProvider
             );
 
@@ -225,8 +227,9 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
     }
 
     @Test
-    public void testResolveIdentityFailsWhenNoFallbackProvider() {
-        // Create provider without S3AccessGrants fallback provider
+    public void testResolveIdentityFailsWhenS3AGEnabledButNoProviderAndNoDirectIAM() {
+        // S3 Access Grants fallback enabled but no provider available, and direct IAM fallback disabled.
+        // Should fail rather than silently fall back.
         LakeFormationAccessGrantsIdentityProvider providerWithoutFallback =
             new LakeFormationAccessGrantsIdentityProvider(
                 mockOriginalProvider,
@@ -234,8 +237,9 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
                 accessDeniedCache,
                 accessGrantsCache,
                 exceptionCache,
-                true, // fallback enabled but no provider
-                null  // no fallback provider
+                true,  // enableS3AccessGrantsFallback (but no provider)
+                false, // enableDirectIAMFallback
+                null   // no S3AG provider
             );
 
         // Mock Lake Formation failure
@@ -248,6 +252,110 @@ public class LakeFormationAccessGrantsIdentityProviderTest {
 
         // Should fail with SdkClientException
         assertTrue(result.isCompletedExceptionally());
+    }
+
+    @Test
+    public void testDirectIAMFallbackSkipsS3AccessGrants() throws Exception {
+        // enableS3AccessGrantsFallback=false, enableDirectIAMFallback=true -> LF -> IAM (skip S3AG).
+        LakeFormationAccessGrantsIdentityProvider providerDirectIAM =
+            new LakeFormationAccessGrantsIdentityProvider(
+                mockOriginalProvider,
+                mockLfClient,
+                accessDeniedCache,
+                accessGrantsCache,
+                exceptionCache,
+                false, // enableS3AccessGrantsFallback
+                true,  // enableDirectIAMFallback
+                mockS3AccessGrantsIdentityProvider
+            );
+
+        // Mock Lake Formation failure
+        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenThrow(new RuntimeException("Lake Formation error"));
+
+        // Original provider returns IAM credentials
+        AwsCredentialsIdentity iamCredentials = AwsBasicCredentials.create("iamKey", "iamSecret");
+        doReturn(CompletableFuture.completedFuture(iamCredentials))
+            .when(mockOriginalProvider).resolveIdentity(mockResolveIdentityRequest);
+
+        CompletableFuture<? extends AwsCredentialsIdentity> result =
+            providerDirectIAM.resolveIdentity(mockResolveIdentityRequest);
+
+        AwsCredentialsIdentity resolvedCredentials = result.get();
+        assertNotNull(resolvedCredentials);
+        // Should fall back to original provider (IAM), NOT S3 Access Grants
+        assertEquals("iamKey", resolvedCredentials.accessKeyId());
+        assertEquals("iamSecret", resolvedCredentials.secretAccessKey());
+
+        // S3 Access Grants provider should NOT be called
+        verify(mockS3AccessGrantsIdentityProvider, never())
+            .resolveIdentity(any(ResolveIdentityRequest.class));
+    }
+
+    @Test
+    public void testS3AccessGrantsFallbackTakesPriorityOverDirectIAM() throws Exception {
+        // Both fallbacks enabled -> S3 Access Grants takes priority.
+        LakeFormationAccessGrantsIdentityProvider providerBoth =
+            new LakeFormationAccessGrantsIdentityProvider(
+                mockOriginalProvider,
+                mockLfClient,
+                accessDeniedCache,
+                accessGrantsCache,
+                exceptionCache,
+                true, // enableS3AccessGrantsFallback
+                true, // enableDirectIAMFallback
+                mockS3AccessGrantsIdentityProvider
+            );
+
+        // Mock Lake Formation failure
+        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenThrow(new RuntimeException("Lake Formation error"));
+
+        // S3 Access Grants fallback returns its own credentials
+        AwsCredentialsIdentity s3agCredentials = AwsBasicCredentials.create("s3agKey", "s3agSecret");
+        doReturn(CompletableFuture.completedFuture(s3agCredentials))
+            .when(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
+
+        CompletableFuture<? extends AwsCredentialsIdentity> result =
+            providerBoth.resolveIdentity(mockResolveIdentityRequest);
+
+        AwsCredentialsIdentity resolvedCredentials = result.get();
+        assertNotNull(resolvedCredentials);
+        // Should fall back to S3 Access Grants, not IAM
+        assertEquals("s3agKey", resolvedCredentials.accessKeyId());
+
+        verify(mockS3AccessGrantsIdentityProvider).resolveIdentity(mockResolveIdentityRequest);
+    }
+
+    @Test
+    public void testDirectIAMFallbackUsedWhenS3AGProviderNull() throws Exception {
+        // enableS3AccessGrantsFallback=true but provider null, direct IAM enabled -> LF -> IAM.
+        LakeFormationAccessGrantsIdentityProvider providerNullS3AG =
+            new LakeFormationAccessGrantsIdentityProvider(
+                mockOriginalProvider,
+                mockLfClient,
+                accessDeniedCache,
+                accessGrantsCache,
+                exceptionCache,
+                true, // enableS3AccessGrantsFallback (but null provider)
+                true, // enableDirectIAMFallback
+                null  // no S3AG provider
+            );
+
+        // Mock Lake Formation failure
+        when(mockLfClient.getTemporaryDataLocationCredentials(any(GetTemporaryDataLocationCredentialsRequest.class)))
+            .thenThrow(new RuntimeException("Lake Formation error"));
+
+        // Original provider returns IAM credentials
+        AwsCredentialsIdentity iamCredentials = AwsBasicCredentials.create("iamKey", "iamSecret");
+        doReturn(CompletableFuture.completedFuture(iamCredentials))
+            .when(mockOriginalProvider).resolveIdentity(mockResolveIdentityRequest);
+
+        CompletableFuture<? extends AwsCredentialsIdentity> result =
+            providerNullS3AG.resolveIdentity(mockResolveIdentityRequest);
+
+        AwsCredentialsIdentity resolvedCredentials = result.get();
+        assertEquals("iamKey", resolvedCredentials.accessKeyId());
     }
 
     @Test

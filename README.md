@@ -46,7 +46,7 @@ S3Client s3Client = S3Client.builder()
         .region(Region.US_WEST_2)
         .addPlugin(LakeFormationAccessGrantsPlugin.builder()
                 .enabled(true)  // Required: plugin is disabled by default
-                .enableFallback(true)
+                .enableS3AccessGrantsFallback(true)
                 .build())
         .build();
 
@@ -62,7 +62,23 @@ s3Client.getObject(GetObjectRequest.builder()
 | Option | Default | Description |
 |--------|---------|-------------|
 | `enabled` | `false` | Enable/disable the plugin. When disabled, the plugin skips all Lake Formation configuration and uses original credentials. |
-| `enableFallback` | `true` | When enabled, falls back to S3 Access Grants (then IAM) if Lake Formation access is denied. |
+| `enableS3AccessGrantsFallback` | `true` | When enabled, Lake Formation failures fall back to S3 Access Grants (which in turn falls back to IAM). This is the traditional fallback chain: Lake Formation → S3 Access Grants → IAM. |
+| `enableDirectIAMFallback` | `false` | When enabled, Lake Formation failures fall back directly to the original IAM credentials provider, skipping S3 Access Grants. Only takes effect when `enableS3AccessGrantsFallback` is `false` (S3 Access Grants fallback takes priority when both are enabled). |
+
+The two fallback flags are independent. On a Lake Formation failure the plugin resolves in this order:
+
+1. If `enableS3AccessGrantsFallback` is `true` → fall back to S3 Access Grants (then IAM).
+2. Otherwise, if `enableDirectIAMFallback` is `true` → fall back directly to IAM, skipping S3 Access Grants.
+3. Otherwise → fail with an `SdkClientException`.
+
+| `enableS3AccessGrantsFallback` | `enableDirectIAMFallback` | Behavior on Lake Formation failure |
+|---|---|---|
+| `true` (default) | `false` (default) | Lake Formation → S3 Access Grants → IAM |
+| `false` | `true` | Lake Formation → IAM (skip S3 Access Grants) |
+| `true` | `true` | Lake Formation → S3 Access Grants → IAM (S3 Access Grants takes priority) |
+| `false` | `false` | Lake Formation only — request fails if Lake Formation cannot resolve |
+
+Use `enableS3AccessGrantsFallback(false).enableDirectIAMFallback(true)` if you do not use S3 Access Grants — this avoids the failed S3 Access Grants calls (added latency and CloudTrail noise) that would otherwise occur on every Lake Formation failure before falling through to IAM.
 
 ## Architecture
 
