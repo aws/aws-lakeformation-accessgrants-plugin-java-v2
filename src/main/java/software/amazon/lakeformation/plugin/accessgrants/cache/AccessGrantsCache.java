@@ -182,7 +182,7 @@ public class AccessGrantsCache {
             } catch (LakeFormationException e) {
                 LOGGER.info("Exception occurred while fetching the credentials from Lake Formation: "
                     + e.getMessage());
-                if ("AccessDenied".equals(e.awsErrorDetails().errorCode())) {
+                if (isAccessDenied(e)) {
                     LOGGER.info("Caching the Access Denied request.");
                     accessDeniedCache.putValueInCache(cacheKey, e);
                 } else if (ExceptionCache.isNegativeCacheable(e)) {
@@ -194,5 +194,16 @@ public class AccessGrantsCache {
             }
         }
         return credentials;
+    }
+
+    /**
+     * Null-safe check for AccessDenied error codes. Lake Formation may return
+     * either
+     * "AccessDenied" or "AccessDeniedException" as the error code.
+     */
+    private static boolean isAccessDenied(final LakeFormationException e) {
+        return e.awsErrorDetails() != null
+                && e.awsErrorDetails().errorCode() != null
+                && e.awsErrorDetails().errorCode().startsWith("AccessDenied");
     }
 }
